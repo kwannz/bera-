@@ -1,30 +1,88 @@
 import pytest
 from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from src.twitter_bot.bot import BeraBot, AuthenticationError
 from src.utils.error_handler import TwitterError, NetworkError, RateLimitError
+from src.utils.rate_limiter import RateLimitStrategy
 
 @pytest.mark.asyncio
-async def test_guest_token_refresh():
-    """Test guest token refresh mechanism"""
+async def test_api_key_authentication():
+    """Test API key-based authentication"""
     bot = BeraBot(
-        username="test_user",
-        password="test_pass"
+        api_key="test_key",
+        api_secret="test_secret",
+        access_token="test_token",
+        access_secret="test_secret"
     )
     
-    # Mock initial authentication
-    with patch.object(bot, 'authenticate') as mock_auth:
+    with patch.object(bot.scraper, 'authenticate') as mock_auth:
         mock_auth.return_value = True
         await bot.authenticate()
-        
-    # Set token as expired
-    bot.guest_token_created = datetime.now() - timedelta(hours=4)
+        mock_auth.assert_called_once_with(
+            api_key="test_key",
+            api_secret="test_secret",
+            access_token="test_token",
+            access_secret="test_secret"
+        )
+
+@pytest.mark.asyncio
+async def test_username_password_authentication():
+    """Test username/password authentication"""
+    bot = BeraBot(
+        username="test_user",
+        password="test_pass",
+        email="test@email.com"
+    )
     
-    # Verify refresh
-    with patch.object(bot, 'authenticate') as mock_auth:
-        mock_auth.return_value = True
-        await bot.ensure_authenticated()
-        mock_auth.assert_called_once()
+    with patch.object(bot.scraper, 'login') as mock_login:
+        mock_login.return_value = True
+        await bot.authenticate()
+        mock_login.assert_called_once_with(
+            username="test_user",
+            password="test_pass",
+            email="test@email.com"
+        )
+
+@pytest.mark.asyncio
+async def test_rate_limit_handling():
+    """Test rate limit handling with exponential backoff"""
+    bot = BeraBot(username="test_user", password="test_pass")
+    
+    # Mock rate limit error
+    with patch.object(bot.scraper, 'authenticate') as mock_auth:
+        mock_auth.side_effect = RateLimitError("Too many requests")
+        
+        start_time = datetime.now()
+        try:
+            await bot.authenticate()
+        except AuthenticationError:
+            pass
+            
+        # Verify exponential backoff
+        elapsed = (datetime.now() - start_time).total_seconds()
+        assert elapsed >= 60, "Rate limit backoff not enforced"
+
+@pytest.mark.asyncio
+async def test_ollama_integration():
+    """Test Ollama model integration"""
+    bot = BeraBot(
+        username="test_user",
+        password="test_pass",
+        ollama_url="http://test-ollama:11434"
+    )
+    
+    with patch('aiohttp.ClientSession.post') as mock_post:
+        mock_post.return_value.__aenter__.return_value.json = AsyncMock(
+            return_value={"response": "Test response"}
+        )
+        
+        response = await bot.model_manager.generate_content(
+            "test_prompt",
+            {"context": "test"}
+        )
+        
+        assert response == "Test response"
+        mock_post.assert_called_once()
         
 @pytest.mark.asyncio
 async def test_csrf_token_handling():
