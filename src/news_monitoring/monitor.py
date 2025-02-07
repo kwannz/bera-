@@ -33,15 +33,19 @@ class NewsMonitor:
                     date_elem = article.find('time')
                     link_elem = article.find('a')
                     
-                    if all(isinstance(elem, BeautifulSoupTag) for elem in [title_elem, date_elem, link_elem] if elem is not None):
-                        title = title_elem.text.strip()
-                        date = date_elem.text.strip()
-                        link = link_elem.get('href', '')
-                        news_items.append({
-                            'title': title,
-                            'date': date,
-                            'link': link if link.startswith('http') else f"{self.bera_home_url}{link}"
-                        })
+                    if title_elem and date_elem and link_elem and isinstance(title_elem, BeautifulSoupTag) and isinstance(date_elem, BeautifulSoupTag) and isinstance(link_elem, BeautifulSoupTag):
+                        try:
+                            title = title_elem.text.strip()
+                            date = date_elem.text.strip()
+                            link = link_elem.get('href', '')
+                            if title and date and link:
+                                news_items.append({
+                                    'title': title,
+                                    'date': date,
+                                    'link': link if isinstance(link, str) and link.startswith('http') else f"{self.bera_home_url}{link}"
+                                })
+                        except (AttributeError, TypeError) as e:
+                            logging.warning(f"Error parsing news item: {str(e)}")
             
             self.latest_news_cache = news_items
             self.last_update = datetime.now()
@@ -66,15 +70,19 @@ class NewsMonitor:
                     date_elem = ido.find('time')
                     status_elem = ido.find('span', {'class': 'status'})
                     
-                    if all(isinstance(elem, BeautifulSoupTag) for elem in [name_elem, date_elem, status_elem] if elem is not None):
-                        name = name_elem.text.strip()
-                        date = date_elem.text.strip()
-                        status = status_elem.text.strip()
-                        ido_items.append({
-                            'name': name,
-                            'date': date,
-                            'status': status
-                        })
+                    if name_elem and date_elem and status_elem and isinstance(name_elem, BeautifulSoupTag) and isinstance(date_elem, BeautifulSoupTag) and isinstance(status_elem, BeautifulSoupTag):
+                        try:
+                            name = name_elem.text.strip()
+                            date = date_elem.text.strip()
+                            status = status_elem.text.strip()
+                            if name and date and status:
+                                ido_items.append({
+                                    'name': name,
+                                    'date': date,
+                                    'status': status
+                                })
+                        except (AttributeError, TypeError) as e:
+                            logging.warning(f"Error parsing IDO item: {str(e)}")
             
             self.latest_idos_cache = ido_items
             return ido_items
