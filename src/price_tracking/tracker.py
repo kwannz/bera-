@@ -2,11 +2,11 @@ import requests
 from typing import Dict, Optional
 from datetime import datetime, timedelta
 
-from ..twitter_bot.bot import (
-    BEAR_EMOJI,
-    PRICE_UPDATE_TEMPLATE,
-)
+from ..twitter_bot.twitter_client import TwitterClient
 from ..utils.logging_config import get_logger, DebugCategory
+
+BEAR_EMOJI = "🐻"
+PRICE_UPDATE_TEMPLATE = "{emoji} BERA: ${price} | Volume: ${volume} | {change_24h}% 24h"
 
 class PriceTracker:
     def __init__(self):
@@ -80,8 +80,8 @@ class PriceTracker:
         sentiment = "Bullish 📈" if data['price_change_24h'] > 0 else "Bearish 📉"
         
         return PRICE_UPDATE_TEMPLATE.format(
-            price=f"${data['price']:.2f}",
+            emoji=BEAR_EMOJI,
+            price=f"{data['price']:.2f}",
             volume=volume_str,
-            change=f"{data['price_change_24h']:+.1f}",
-            market_sentiment=sentiment
+            change_24h=f"{data['price_change_24h']:+.1f}"
         )
