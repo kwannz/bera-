@@ -4,6 +4,7 @@ from unittest.mock import patch, MagicMock
 from src.twitter_bot.bot import BeraBot, AuthenticationError
 from src.utils.error_handler import TwitterError, NetworkError, RateLimitError
 
+@pytest.mark.asyncio
 async def test_login_with_retries():
     """Test login retry mechanism"""
     bot = BeraBot(
@@ -26,6 +27,7 @@ async def test_login_with_retries():
             await bot.login()
             assert mock_login.call_count == 3
             
+@pytest.mark.asyncio
 async def test_session_restoration():
     """Test session restoration from cookies"""
     bot = BeraBot(
@@ -46,6 +48,7 @@ async def test_session_restoration():
                 mock_load.assert_called_once()
                 mock_set_cookies.assert_called_once()
                 
+@pytest.mark.asyncio
 async def test_login_failure():
     """Test handling of login failures"""
     bot = BeraBot(
