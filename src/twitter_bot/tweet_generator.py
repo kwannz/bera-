@@ -3,7 +3,7 @@ from datetime import datetime
 from ..utils.logging_config import get_logger, DebugCategory
 from ..ai_response.model_manager import AIModelManager, ContentType
 from ..price_tracking.tracker import PriceTracker
-from ..news_monitoring.monitor import NewsMonitor
+from ..utils.templates import TWEET_TEMPLATE, BEAR_EMOJI
 from ..token_analytics.analytics_collector import AnalyticsCollector
 
 class TweetGenerator:
@@ -11,7 +11,7 @@ class TweetGenerator:
         self.logger = get_logger(__name__)
         self.model_manager = model_manager
         self.price_tracker = PriceTracker()
-        self.news_monitor = NewsMonitor()
+        self.logger = get_logger(__name__)
         self.analytics_collector = AnalyticsCollector()
         
     async def generate_market_update(self) -> Optional[str]:
