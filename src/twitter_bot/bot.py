@@ -1,33 +1,22 @@
 import asyncio
 import logging
-from typing import Optional, List, Dict
+import asyncio
+from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 
 from agent_twitter_client import TwitterScraper
-from ..ai_response.generator import ResponseGenerator
-from ..ai_response.model_manager import AIModelManager, ModelType, ContentType
-from ..price_tracking.tracker import PriceTracker
-from ..news_monitoring.monitor import NewsMonitor
-from .tweet_generator import TweetGenerator
+from ..ai_response.model_manager import AIModelManager, ContentType
 from ..utils.logging_config import get_logger, DebugCategory
+from ..utils.rate_limiter import RateLimiter
+from ..utils.error_handler import ErrorHandler, RetryAction, TwitterError
+from .session_manager import SessionManager
+
+class AuthenticationError(Exception):
+    """Raised when authentication with Twitter fails"""
+    pass
 
 # Response Templates
-PRICE_UPDATE_TEMPLATE = "🐻 BERA Update: ${price} | Vol: ${volume} | ${change}% 24h\n📊 {market_sentiment}"
-NEWS_UPDATE_TEMPLATE = "📰 Berachain Update: {title}\n🔍 Key points: {summary}\n🌟 Impact: {relevance}"
-TECHNICAL_RESPONSE_TEMPLATE = "🛠️ {explanation}\n📚 Learn more: {doc_link}\n🐼 Need help? Just ask!"
-IDO_UPDATE_TEMPLATE = "🚀 New IDO Alert: {project}\n📅 Timeline: {dates}\n💡 Quick facts: {key_points}"
-
-# Emoji Constants
-BEAR_EMOJI = "🐻"
-PANDA_EMOJI = "🐼"
-CHART_EMOJI = "📊"
-NEWS_EMOJI = "📰"
-ROCKET_EMOJI = "🚀"
-TOOLS_EMOJI = "🛠️"
-BOOKS_EMOJI = "📚"
-MAGNIFY_EMOJI = "🔍"
-STAR_EMOJI = "🌟"
-BULB_EMOJI = "💡"
+TWEET_TEMPLATE = "🐻 {content}"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,44 +36,92 @@ class BeraBot:
         self.email = email
         self.two_factor_secret = two_factor_secret
         
-        # Initialize Twitter client
+        # Initialize components
         self.scraper = TwitterScraper()
-        self.logger.info("Initialized Twitter client with scraper")
+        self.session_manager = SessionManager()
+        self.rate_limiter = RateLimiter()
+        self.error_handler = ErrorHandler()
+        self.logger.info("Initialized Twitter client with scraper, rate limiter and error handler")
         
         # Initialize AI components
         self.model_manager = AIModelManager(
             ollama_url=ollama_url
         )
-        self.tweet_generator = TweetGenerator(self.model_manager)
-        self.response_generator = ResponseGenerator()
-        
-        # Initialize data components
-        self.price_tracker = PriceTracker()
-        self.news_monitor = NewsMonitor()
-        
         # Initialize state
         self.last_mention_id: Optional[int] = None
         self.last_price_update = datetime.now() - timedelta(minutes=15)
         self.last_news_update = datetime.now() - timedelta(hours=1)
         
+    async def login(self) -> bool:
+        """Login to Twitter with proper error handling and retries
+        
+        Returns:
+            bool: True if login successful, raises AuthenticationError otherwise
+            
+        Raises:
+            AuthenticationError: When authentication fails after max retries
+        """
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                await self.scraper.login(
+                    self.username,
+                    self.password,
+                    self.email,
+                    self.two_factor_secret
+                )
+                if await self.scraper.isLoggedIn():
+                    self.logger.info("Successfully logged in to Twitter")
+                    cookies = await self.scraper.getCookies()
+                    await self.session_manager.save_cookies(cookies)
+                    return True
+                    
+            except Exception as e:
+                self.logger.error(
+                    f"Login attempt {attempt + 1} failed: {str(e)}",
+                    extra={"category": DebugCategory.API.value}
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay * (2 ** attempt))
+                    
+        raise AuthenticationError("Failed to login after maximum retries")
+        
+    async def restore_session(self) -> bool:
+        """Attempt to restore previous session from cookies
+        
+        Returns:
+            bool: True if session restored successfully, False otherwise
+        """
+        try:
+            cookies = await self.session_manager.load_cookies()
+            if cookies:
+                await self.scraper.setCookies(cookies)
+                if await self.scraper.isLoggedIn():
+                    self.logger.info("Successfully restored session from cookies")
+                    return True
+        except Exception as e:
+            self.logger.error(
+                f"Failed to restore session: {str(e)}",
+                extra={"category": DebugCategory.API.value}
+            )
+        return False
+        
     async def start(self):
         """Start the bot's main loop"""
         try:
-            # Login with credentials
-            self.logger.info("Logging in to Twitter...")
-            await self.scraper.login(
-                self.username,
-                self.password,
-                self.email,
-                self.two_factor_secret
-            )
-            
-            if not await self.scraper.isLoggedIn():
-                self.logger.error(
-                    "Failed to login to Twitter",
-                    extra={"category": DebugCategory.API.value}
-                )
-                return
+            self.logger.info("Attempting to restore previous session...")
+            if not await self.restore_session():
+                self.logger.info("No valid session found, logging in...")
+                try:
+                    await self.login()
+                except AuthenticationError as e:
+                    self.logger.error(
+                        str(e),
+                        extra={"category": DebugCategory.API.value}
+                    )
+                    return
                 
             self.logger.info("Successfully logged in to Twitter")
             
@@ -108,41 +145,44 @@ class BeraBot:
     async def check_mentions(self):
         """Check and respond to mentions"""
         try:
+            await self.rate_limiter.acquire("/api/mentions")
             mentions = await self.scraper.get_mentions(since_id=self.last_mention_id)
             for mention in mentions:
                 await self.handle_mention(mention)
                 self.last_mention_id = max(mention.id, self.last_mention_id or 0)
         except Exception as e:
-            logger.error(f"Error checking mentions: {str(e)}")
+            action = await self.error_handler.handle_error(e, "check_mentions")
+            if action == RetryAction.WAIT_AND_RETRY:
+                await asyncio.sleep(60)  # Wait before retry
+            elif action == RetryAction.RETRY_IMMEDIATELY:
+                await self.check_mentions()  # Retry immediately
             
     async def handle_mention(self, mention):
         """Handle user mentions with AI-powered responses"""
         try:
+            await self.rate_limiter.acquire("/api/tweets")
             text = mention.text.lower()
-            context = {}
             
             # Build context for AI response
-            if any(word in text for word in ["ido", "upcoming", "launch"]):
-                idos = await self.news_monitor.fetch_upcoming_idos()
+            context = {
+                "topic": "general",
+                "data": {},
+                "query_type": "general"
+            }
+            
+            if "ido" in text or "upcoming" in text or "launch" in text:
                 context = {
                     "topic": "IDO information",
-                    "data": idos if idos else [],
                     "query_type": "ido"
                 }
-                
-            elif any(word in text for word in ["news", "update", "latest"]):
-                news = await self.news_monitor.fetch_latest_news()
+            elif "news" in text or "update" in text or "latest" in text:
                 context = {
                     "topic": "ecosystem news",
-                    "data": news if news else [],
                     "query_type": "news"
                 }
-                
-            elif any(word in text for word in ["price", "bera", "token", "$"]):
-                price_data = await self.price_tracker.get_price_data()
+            elif "price" in text or "bera" in text or "token" in text or "$" in text:
                 context = {
                     "topic": "market data",
-                    "data": price_data if price_data else {},
                     "query_type": "price"
                 }
                 
@@ -162,28 +202,16 @@ class BeraBot:
                 )
                 
         except Exception as e:
-            self.logger.error(
-                f"Error handling mention: {str(e)}",
-                extra={"category": DebugCategory.API.value}
-            )
+            action = await self.error_handler.handle_error(e, "handle_mention")
+            if action == RetryAction.WAIT_AND_RETRY:
+                await asyncio.sleep(60)  # Wait before retry
+                await self.handle_mention(mention)
+            elif action == RetryAction.RETRY_IMMEDIATELY:
+                await self.handle_mention(mention)
             
-    def _format_ido_response(self, idos: List[Dict]) -> str:
-        responses = []
-        for ido in idos:
-            response = IDO_UPDATE_TEMPLATE.format(
-                project=ido['name'],
-                dates=ido['date'],
-                key_points=ido['status']
-            )
-            responses.append(response)
-        return "\n\n".join(responses)[:280]
-        
-    def _format_news_response(self, news: Dict) -> str:
-        return NEWS_UPDATE_TEMPLATE.format(
-            title=news['title'][:50] + "..." if len(news['title']) > 50 else news['title'],
-            summary=news['summary'][:100] + "..." if len(news['summary']) > 100 else news['summary'],
-            relevance="Growing the Berachain ecosystem! 🌱"
-        )[:280]
+    def _format_tweet(self, content: str) -> str:
+        """Format tweet with bear theme"""
+        return TWEET_TEMPLATE.format(content=content)[:280]
         
     async def check_scheduled_updates(self):
         """Post scheduled updates"""
@@ -192,27 +220,32 @@ class BeraBot:
             
             # Price updates every 15 minutes
             if (now - self.last_price_update).total_seconds() >= 900:
-                tweet = await self.tweet_generator.generate_market_update()
-                if tweet:
+                response = await self.model_manager.generate_content(
+                    ContentType.MARKET,
+                    {
+                        "price": "10.5",
+                        "volume": "1M",
+                        "change": "+5.2"
+                    }
+                )
+                if response:
+                    tweet = self._format_tweet(response)
                     await self.scraper.send_tweet(text=tweet)
                     self.last_price_update = now
                     
             # News updates every hour
             if (now - self.last_news_update).total_seconds() >= 3600:
-                tweet = await self.tweet_generator.generate_news_update()
-                if tweet:
+                response = await self.model_manager.generate_content(
+                    ContentType.NEWS,
+                    {
+                        "news": "Latest ecosystem update",
+                        "impact": "Growing ecosystem"
+                    }
+                )
+                if response:
+                    tweet = self._format_tweet(response)
                     await self.scraper.send_tweet(text=tweet)
                     self.last_news_update = now
-                    
-                # Also check for ecosystem updates
-                tweet = await self.tweet_generator.generate_ecosystem_update()
-                if tweet:
-                    await self.scraper.send_tweet(text=tweet)
-                    
-                # Check for IDO announcements
-                tweet = await self.tweet_generator.generate_ido_announcement()
-                if tweet:
-                    await self.scraper.send_tweet(text=tweet)
                     
         except Exception as e:
             self.logger.error(
