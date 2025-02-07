@@ -1,5 +1,14 @@
 import pytest
+import aiohttp
 from src.ai_response.model_manager import AIModelManager, ContentType
+
+async def test_ollama_server():
+    """Test if Ollama server is running and accessible"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get("http://localhost:11434/api/tags") as response:
+            assert response.status == 200
+            data = await response.json()
+            assert any(model["name"] == "deepseek-r1:1.5b" for model in data["models"])
 
 @pytest.mark.asyncio
 async def test_ollama_integration():
