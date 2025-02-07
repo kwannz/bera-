@@ -1,9 +1,76 @@
-import asyncio
 import pytest
+from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 from src.twitter_bot.bot import BeraBot, AuthenticationError
 from src.utils.error_handler import TwitterError, NetworkError, RateLimitError
 
+@pytest.mark.asyncio
+async def test_guest_token_refresh():
+    """Test guest token refresh mechanism"""
+    bot = BeraBot(
+        username="test_user",
+        password="test_pass"
+    )
+    
+    # Mock initial authentication
+    with patch.object(bot, 'authenticate') as mock_auth:
+        mock_auth.return_value = True
+        await bot.authenticate()
+        
+    # Set token as expired
+    bot.guest_token_created = datetime.now() - timedelta(hours=4)
+    
+    # Verify refresh
+    with patch.object(bot, 'authenticate') as mock_auth:
+        mock_auth.return_value = True
+        await bot.ensure_authenticated()
+        mock_auth.assert_called_once()
+        
+@pytest.mark.asyncio
+async def test_csrf_token_handling():
+    """Test CSRF token extraction and header preparation"""
+    bot = BeraBot(
+        username="test_user",
+        password="test_pass"
+    )
+    
+    # Mock cookie with CSRF token
+    test_cookies = [{"name": "ct0", "value": "test_csrf_token"}]
+    with patch.object(bot.session_manager, 'load_cookies') as mock_load:
+        mock_load.return_value = test_cookies
+        
+        # Verify CSRF token extraction
+        csrf_token = await bot.get_csrf_token()
+        assert csrf_token == "test_csrf_token"
+        
+        # Verify headers include CSRF token
+        bot.guest_token = "test_guest_token"
+        headers = await bot.prepare_headers()
+        assert headers["x-csrf-token"] == "test_csrf_token"
+        assert headers["x-guest-token"] == "test_guest_token"
+        
+@pytest.mark.asyncio
+async def test_rate_limit_handling():
+    """Test rate limit handling with exponential backoff"""
+    bot = BeraBot(
+        username="test_user",
+        password="test_pass"
+    )
+    
+    # Mock rate limit error
+    with patch.object(bot, 'authenticate') as mock_auth:
+        mock_auth.side_effect = RateLimitError("Too many requests")
+        
+        start_time = datetime.now()
+        try:
+            await bot.authenticate()
+        except AuthenticationError:
+            pass
+            
+        # Verify exponential backoff
+        elapsed = (datetime.now() - start_time).total_seconds()
+        assert elapsed >= 60, "Rate limit backoff not enforced"
+        
 @pytest.mark.asyncio
 async def test_login_with_retries():
     """Test login retry mechanism"""

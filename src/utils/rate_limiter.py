@@ -13,9 +13,29 @@ class RateLimit:
     remaining: int
     reset_time: float
 
+class RateLimitStrategy:
+    def __init__(self, max_retries: int = 3):
+        self.max_retries = max_retries
+        self.logger = get_logger(__name__)
+        
+    async def handle_rate_limit(
+        self,
+        retry_count: int,
+        retry_after: Optional[int] = None
+    ) -> float:
+        """Calculate wait time using exponential backoff"""
+        if retry_count >= self.max_retries:
+            raise RateLimitError("Max retries exceeded")
+            
+        base_delay = retry_after or 60
+        wait_time = base_delay * (2 ** retry_count)
+        
+        return min(wait_time, 3600)  # Cap at 1 hour
+
 class RateLimiter:
     def __init__(self, default_max_requests: int = 25, default_window: int = 7200):
         self.logger = get_logger(__name__)
+        self.strategy = RateLimitStrategy()
         self.default_limit = RateLimit(
             max_requests=default_max_requests,
             time_window=default_window,
@@ -24,6 +44,7 @@ class RateLimiter:
         )
         self.endpoints: Dict[str, RateLimit] = {}
         self.requests: List[float] = []
+        self.retry_counts: Dict[str, int] = {}
         
     async def acquire(self, endpoint: Optional[str] = None) -> None:
         """Check rate limit and wait if necessary
@@ -38,12 +59,21 @@ class RateLimiter:
         self.requests = [t for t in self.requests if now - t < limit.time_window]
         
         if len(self.requests) >= limit.max_requests:
-            wait_time = self.requests[0] + limit.time_window - now
-            self.logger.warning(
-                f"Rate limit reached, waiting {wait_time:.2f}s",
-                extra={"category": DebugCategory.API.value}
-            )
-            await asyncio.sleep(wait_time)
+            retry_count = self.retry_counts.get(endpoint, 0)
+            try:
+                wait_time = await self.strategy.handle_rate_limit(
+                    retry_count,
+                    retry_after=int(limit.reset_time - now)
+                )
+                self.logger.warning(
+                    f"Rate limit reached, waiting {wait_time:.2f}s",
+                    extra={"category": DebugCategory.API.value}
+                )
+                await asyncio.sleep(wait_time)
+                self.retry_counts[endpoint] = retry_count + 1
+            except RateLimitError as e:
+                self.retry_counts[endpoint] = 0
+                raise e
             
         self.requests.append(now)
         

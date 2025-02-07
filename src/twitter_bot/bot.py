@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import asyncio
+import aiohttp
+import os
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 
@@ -8,7 +10,7 @@ from agent_twitter_client import TwitterScraper
 from ..ai_response.model_manager import AIModelManager, ContentType
 from ..utils.logging_config import get_logger, DebugCategory
 from ..utils.rate_limiter import RateLimiter
-from ..utils.error_handler import ErrorHandler, RetryAction, TwitterError
+from ..utils.error_handler import TwitterErrorHandler, RetryAction, TwitterError
 from .session_manager import SessionManager
 
 class AuthenticationError(Exception):
@@ -28,6 +30,22 @@ class BeraBot:
         password: str,
         email: Optional[str] = None,
         two_factor_secret: Optional[str] = None,
+        ollama_url: str = "http://localhost:11434",
+        bearer_token: Optional[str] = None
+    ):
+        self.logger = get_logger(__name__)
+        self.username = username
+        self.password = password
+        self.email = email
+        self.two_factor_secret = two_factor_secret
+        self.bearer_token = bearer_token or os.getenv("TWITTER_BEARER_TOKEN")
+
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        email: Optional[str] = None,
+        two_factor_secret: Optional[str] = None,
         ollama_url: str = "http://localhost:11434"
     ):
         self.logger = get_logger(__name__)
@@ -40,7 +58,12 @@ class BeraBot:
         self.scraper = TwitterScraper()
         self.session_manager = SessionManager()
         self.rate_limiter = RateLimiter()
-        self.error_handler = ErrorHandler()
+        self.error_handler = TwitterErrorHandler(self.rate_limiter.strategy)
+        
+        # Authentication state
+        self.guest_token: Optional[str] = None
+        self.guest_token_created: Optional[datetime] = None
+        
         self.logger.info("Initialized Twitter client with scraper, rate limiter and error handler")
         
         # Initialize AI components
@@ -52,41 +75,77 @@ class BeraBot:
         self.last_price_update = datetime.now() - timedelta(minutes=15)
         self.last_news_update = datetime.now() - timedelta(hours=1)
         
-    async def login(self) -> bool:
-        """Login to Twitter with proper error handling and retries
+    async def get_csrf_token(self) -> Optional[str]:
+        """Get CSRF token from cookies"""
+        cookies = await self.session_manager.load_cookies()
+        for cookie in cookies:
+            if cookie["name"] == "ct0":
+                return cookie["value"]
+        return None
         
-        Returns:
-            bool: True if login successful, raises AuthenticationError otherwise
+    async def prepare_headers(self) -> Dict[str, str]:
+        """Prepare headers with proper tokens"""
+        headers = {
+            "Authorization": f"Bearer {self.BEARER_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        if self.guest_token:
+            headers["x-guest-token"] = self.guest_token
             
-        Raises:
-            AuthenticationError: When authentication fails after max retries
-        """
-        max_retries = 3
-        retry_delay = 5
+        if csrf_token := await self.get_csrf_token():
+            headers["x-csrf-token"] = csrf_token
+            
+        return headers
         
-        for attempt in range(max_retries):
-            try:
-                await self.scraper.login(
-                    self.username,
-                    self.password,
-                    self.email,
-                    self.two_factor_secret
-                )
-                if await self.scraper.isLoggedIn():
-                    self.logger.info("Successfully logged in to Twitter")
-                    cookies = await self.scraper.getCookies()
-                    await self.session_manager.save_cookies(cookies)
-                    return True
+    def should_refresh_token(self) -> bool:
+        """Check if guest token needs refresh (3 hour expiration)"""
+        if not self.guest_token or not self.guest_token_created:
+            return True
+            
+        expiration = timedelta(hours=3)
+        return datetime.now() - self.guest_token_created > expiration
+        
+    async def ensure_authenticated(self):
+        """Ensure valid authentication before requests"""
+        if self.should_refresh_token():
+            if not await self.authenticate():
+                raise AuthenticationError("Failed to refresh authentication")
+                
+    async def authenticate(self) -> bool:
+        """Authenticate with Twitter using guest token flow"""
+        try:
+            headers = await self.prepare_headers()
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.twitter.com/1.1/guest/activate.json",
+                    headers=headers
+                ) as response:
+                    if response.status != 200:
+                        raise AuthenticationError(f"Failed to get guest token: {response.status}")
+                        
+                    data = await response.json()
+                    if "guest_token" not in data:
+                        raise AuthenticationError("Invalid guest token response")
+                        
+                    self.guest_token = data["guest_token"]
+                    self.guest_token_created = datetime.now()
                     
-            except Exception as e:
-                self.logger.error(
-                    f"Login attempt {attempt + 1} failed: {str(e)}",
-                    extra={"category": DebugCategory.API.value}
-                )
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(retry_delay * (2 ** attempt))
+                    # Update cookies from response
+                    cookies = response.cookies
+                    await self.session_manager.save_cookies([
+                        {"name": c.key, "value": c.value}
+                        for c in cookies.values()
+                    ])
                     
-        raise AuthenticationError("Failed to login after maximum retries")
+            return True
+        except Exception as e:
+            action, wait_time = await self.error_handler.handle_error(e, "authenticate")
+            if action == RetryAction.WAIT_AND_RETRY:
+                await asyncio.sleep(wait_time)
+                return await self.authenticate()
+            return False
         
     async def restore_session(self) -> bool:
         """Attempt to restore previous session from cookies
@@ -145,6 +204,7 @@ class BeraBot:
     async def check_mentions(self):
         """Check and respond to mentions"""
         try:
+            await self.ensure_authenticated()
             await self.rate_limiter.acquire("/api/mentions")
             mentions = await self.scraper.get_mentions(since_id=self.last_mention_id)
             for mention in mentions:
@@ -160,6 +220,7 @@ class BeraBot:
     async def handle_mention(self, mention):
         """Handle user mentions with AI-powered responses"""
         try:
+            await self.ensure_authenticated()
             await self.rate_limiter.acquire("/api/tweets")
             text = mention.text.lower()
             
