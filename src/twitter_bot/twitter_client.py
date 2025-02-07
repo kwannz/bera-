@@ -72,14 +72,25 @@ class TwitterClient:
                     url,
                     headers={"Authorization": auth_header}
                 ) as response:
+                    response_text = await response.text()
                     if response.status != 200:
-                        self.logger.error(f"OAuth error: {response.status}")
+                        self.logger.error(f"OAuth error: {response.status}, Response: {response_text}")
+                        self.logger.error(f"Request headers: {auth_header}")
                         return False
                         
-                    data = await response.text()
-                    params = dict(p.split("=") for p in data.split("&"))
-                    self.oauth_token = params.get("oauth_token")
-                    self.oauth_token_secret = params.get("oauth_token_secret")
+                    try:
+                        params = dict(p.split("=") for p in response_text.split("&"))
+                        self.oauth_token = params.get("oauth_token")
+                        self.oauth_token_secret = params.get("oauth_token_secret")
+                        
+                        if not self.oauth_token or not self.oauth_token_secret:
+                            self.logger.error(f"Missing tokens in response: {response_text}")
+                            return False
+                            
+                        self.logger.info("Successfully obtained OAuth tokens")
+                    except Exception as e:
+                        self.logger.error(f"Failed to parse response: {response_text}, Error: {str(e)}")
+                        return False
                     
                     if not self.oauth_token or not self.oauth_token_secret:
                         self.logger.error("Missing OAuth tokens in response")
