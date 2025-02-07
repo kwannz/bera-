@@ -1,6 +1,13 @@
 import requests
 import logging
+from typing import Dict, Optional
 from datetime import datetime, timedelta
+
+# Import templates and emojis
+from ..twitter_bot.bot import (
+    BEAR_EMOJI,
+    PRICE_UPDATE_TEMPLATE,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,14 +46,18 @@ class PriceTracker:
             logging.error(f"Error fetching BERA price data: {str(e)}")
             return None
             
-    def format_price_report(self, data):
+    def format_price_report(self, data: Dict) -> str:
         if not data:
-            return "Price data unavailable"
+            return f"{BEAR_EMOJI} Price data unavailable"
         
         volume = data['volume_24h']
-        if volume >= 1_000_000_000:  # Billions
-            volume_str = f"${volume/1_000_000_000:.1f}B"
-        else:  # Millions
-            volume_str = f"${volume/1_000_000:.1f}M"
-            
-        return f"BERA: ${data['price']:.2f} | Volume: {volume_str} | {data['price_change_24h']:+.1f}% 24h"
+        volume_str = f"${volume/1_000_000_000:.1f}B" if volume >= 1_000_000_000 else f"${volume/1_000_000:.1f}M"
+        
+        sentiment = "Bullish 📈" if data['price_change_24h'] > 0 else "Bearish 📉"
+        
+        return PRICE_UPDATE_TEMPLATE.format(
+            price=f"${data['price']:.2f}",
+            volume=volume_str,
+            change=f"{data['price_change_24h']:+.1f}",
+            market_sentiment=sentiment
+        )
