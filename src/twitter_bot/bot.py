@@ -8,6 +8,24 @@ from ..ai_response.generator import ResponseGenerator
 from ..price_tracking.tracker import PriceTracker
 from ..news_monitoring.monitor import NewsMonitor
 
+# Response Templates
+PRICE_UPDATE_TEMPLATE = "🐻 BERA Update: ${price} | Vol: ${volume} | ${change}% 24h\n📊 {market_sentiment}"
+NEWS_UPDATE_TEMPLATE = "📰 Berachain Update: {title}\n🔍 Key points: {summary}\n🌟 Impact: {relevance}"
+TECHNICAL_RESPONSE_TEMPLATE = "🛠️ {explanation}\n📚 Learn more: {doc_link}\n🐼 Need help? Just ask!"
+IDO_UPDATE_TEMPLATE = "🚀 New IDO Alert: {project}\n📅 Timeline: {dates}\n💡 Quick facts: {key_points}"
+
+# Emoji Constants
+BEAR_EMOJI = "🐻"
+PANDA_EMOJI = "🐼"
+CHART_EMOJI = "📊"
+NEWS_EMOJI = "📰"
+ROCKET_EMOJI = "🚀"
+TOOLS_EMOJI = "🛠️"
+BOOKS_EMOJI = "📚"
+MAGNIFY_EMOJI = "🔍"
+STAR_EMOJI = "🌟"
+BULB_EMOJI = "💡"
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -87,11 +105,20 @@ class BeraBot:
     def _format_ido_response(self, idos: List[Dict]) -> str:
         responses = []
         for ido in idos:
-            responses.append(self.news_monitor.format_ido_update(ido))
+            response = IDO_UPDATE_TEMPLATE.format(
+                project=ido['name'],
+                dates=ido['date'],
+                key_points=ido['status']
+            )
+            responses.append(response)
         return "\n\n".join(responses)[:280]
         
     def _format_news_response(self, news: Dict) -> str:
-        return self.news_monitor.format_news_update(news)[:280]
+        return NEWS_UPDATE_TEMPLATE.format(
+            title=news['title'][:50] + "..." if len(news['title']) > 50 else news['title'],
+            summary=news['summary'][:100] + "..." if len(news['summary']) > 100 else news['summary'],
+            relevance="Growing the Berachain ecosystem! 🌱"
+        )[:280]
         
     async def check_scheduled_updates(self):
         """Post scheduled updates (price updates every 15 minutes)"""

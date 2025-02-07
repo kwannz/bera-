@@ -4,6 +4,8 @@ from bs4 import BeautifulSoup, Tag as BeautifulSoupTag
 from datetime import datetime
 from typing import List, Dict, Optional
 
+from ..twitter_bot.bot import NEWS_UPDATE_TEMPLATE
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -39,10 +41,15 @@ class NewsMonitor:
                             date = date_elem.text.strip()
                             link = link_elem.get('href', '')
                             if title and date and link:
+                                # Extract summary from article content
+                                summary_elem = article.find('p', {'class': 'summary'}) or article.find('p')
+                                summary = summary_elem.text.strip() if summary_elem and isinstance(summary_elem, BeautifulSoupTag) else ""
+                                
                                 news_items.append({
                                     'title': title,
                                     'date': date,
-                                    'link': link if isinstance(link, str) and link.startswith('http') else f"{self.bera_home_url}{link}"
+                                    'link': link if isinstance(link, str) and link.startswith('http') else f"{self.bera_home_url}{link}",
+                                    'summary': summary
                                 })
                         except (AttributeError, TypeError) as e:
                             logging.warning(f"Error parsing news item: {str(e)}")
@@ -91,7 +98,11 @@ class NewsMonitor:
             return self.latest_idos_cache
             
     def format_news_update(self, news_item: Dict) -> str:
-        return f"📰 {news_item['title']}\n📅 {news_item['date']}\n🔗 {news_item['link']}"
+        return NEWS_UPDATE_TEMPLATE.format(
+            title=news_item['title'][:50] + "..." if len(news_item['title']) > 50 else news_item['title'],
+            summary=news_item['summary'][:100] + "..." if len(news_item['summary']) > 100 else news_item['summary'],
+            relevance="Growing the Berachain ecosystem! 🌱"
+        )
         
     def format_ido_update(self, ido: Dict) -> str:
         return f"🚀 Upcoming IDO: {ido['name']}\n📅 {ido['date']}\n📊 Status: {ido['status']}"
