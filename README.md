@@ -1,11 +1,25 @@
 # Berachain Twitter Bot
 
+## Prerequisites
+
+- Python 3.12+
+- Node.js 18+
+- Ollama (for AI responses)
+
 ## Installation
 
-1. Clone the repository:
+1. Clone the repositories:
 ```bash
+# Clone main repository
 git clone https://github.com/kwannz/bera-.git
 cd bera-twitter-bot
+
+# Clone and install agent-twitter-client
+git clone https://github.com/elizaOS/agent-twitter-client.git
+cd agent-twitter-client
+npm install
+npm run build
+cd ..
 ```
 
 2. Create and activate a virtual environment:
@@ -18,12 +32,14 @@ source venv/bin/activate  # On Windows: .\venv\Scripts\activate
 ```bash
 pip install -r requirements.txt
 pip install -r tests/requirements-test.txt  # For running tests
+pip install -e ./agent-twitter-client  # Install Twitter client
 ```
 
 4. Install and start Ollama:
 ```bash
 # Follow instructions at https://ollama.ai/download
-ollama run deepseek-r1:1.5b
+ollama pull deepseek-r1:1.5b  # Download model
+ollama run deepseek-r1:1.5b   # Start model server
 ```
 
 5. Set up environment variables:
@@ -32,11 +48,66 @@ cp .env.example .env
 # Edit .env with your Twitter credentials and API keys
 ```
 
+## Dependencies
+
+Key dependencies and their versions:
+- eth-typing==3.5.2 (required for Web3 integration)
+- web3==6.15.1
+- aiohttp==3.9.3
+- agent-twitter-client (from elizaOS)
+
 ## Development
+
+### Environment Setup
+1. Configure Twitter API credentials in `.env`
+2. Start Ollama server for AI responses
+3. Set up BeraTrail API access for price tracking
 
 ### Running Tests
 ```bash
 python -m pytest tests/ -v
+```
+
+### API Documentation
+
+#### Twitter Client
+- Uses agent-twitter-client for Twitter API interactions
+- Implements TypeScript-inspired authentication flow
+- Handles rate limiting with exponential backoff
+
+#### Price Tracking
+- BeraTrail API integration for real-time BERA token data
+- Automated price and volume updates
+- Daily percentage change calculations
+
+#### AI Integration
+- Uses Ollama with deepseek-r1:1.5b model
+- Customizable response templates
+- Context-aware interactions
+
+### Troubleshooting
+
+1. eth-typing Dependency Issues
+```bash
+pip uninstall eth-typing web3 eth-utils
+pip install eth-typing==3.5.2 web3==6.15.1 eth-utils==3.0.0
+```
+
+2. Twitter Client Installation
+```bash
+# If npm build fails, try:
+cd agent-twitter-client
+rm -rf node_modules
+npm install --legacy-peer-deps
+npm run build
+```
+
+3. Ollama Connection Issues
+```bash
+# Check if Ollama is running
+curl http://localhost:11434/api/tags
+# Restart Ollama if needed
+sudo systemctl restart ollama
 ```
 
 ### Running the Bot
