@@ -1,9 +1,9 @@
-import tweepy
 import asyncio
 import logging
 from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 
+from agent_twitter_client import TwitterScraper
 from ..ai_response.generator import ResponseGenerator
 from ..ai_response.model_manager import AIModelManager, ModelType, ContentType
 from ..price_tracking.tracker import PriceTracker
@@ -37,19 +37,19 @@ class BeraBot:
         self,
         username: str,
         password: str,
+        email: Optional[str] = None,
+        two_factor_secret: Optional[str] = None,
         ollama_url: str = "http://localhost:11434"
     ):
         self.logger = get_logger(__name__)
         self.username = username
         self.password = password
+        self.email = email
+        self.two_factor_secret = two_factor_secret
         
         # Initialize Twitter client
-        auth = tweepy.OAuthHandler("", "")  # Empty strings for client-only auth
-        self.api = tweepy.API(auth)
-        self.client = tweepy.Client(
-            username=username,
-            password=password
-        )
+        self.scraper = TwitterScraper()
+        self.logger.info("Initialized Twitter client with scraper")
         
         # Initialize AI components
         self.model_manager = AIModelManager(
@@ -81,7 +81,7 @@ class BeraBot:
     async def check_mentions(self):
         """Check and respond to mentions"""
         try:
-            mentions = self.api.mentions_timeline(since_id=self.last_mention_id)
+            mentions = await self.scraper.get_mentions(since_id=self.last_mention_id)
             for mention in mentions:
                 await self.handle_mention(mention)
                 self.last_mention_id = max(mention.id, self.last_mention_id or 0)
@@ -129,9 +129,9 @@ class BeraBot:
             )
             
             if response:
-                self.client.create_tweet(
+                await self.scraper.send_tweet(
                     text=f"@{mention.user.screen_name} {response}"[:280],
-                    in_reply_to_tweet_id=mention.id
+                    reply_to=mention.id
                 )
                 
         except Exception as e:
@@ -167,25 +167,25 @@ class BeraBot:
             if (now - self.last_price_update).total_seconds() >= 900:
                 tweet = await self.tweet_generator.generate_market_update()
                 if tweet:
-                    self.client.create_tweet(text=tweet)
+                    await self.scraper.send_tweet(text=tweet)
                     self.last_price_update = now
                     
             # News updates every hour
             if (now - self.last_news_update).total_seconds() >= 3600:
                 tweet = await self.tweet_generator.generate_news_update()
                 if tweet:
-                    self.client.create_tweet(text=tweet)
+                    await self.scraper.send_tweet(text=tweet)
                     self.last_news_update = now
                     
                 # Also check for ecosystem updates
                 tweet = await self.tweet_generator.generate_ecosystem_update()
                 if tweet:
-                    self.client.create_tweet(text=tweet)
+                    await self.scraper.send_tweet(text=tweet)
                     
                 # Check for IDO announcements
                 tweet = await self.tweet_generator.generate_ido_announcement()
                 if tweet:
-                    self.client.create_tweet(text=tweet)
+                    await self.scraper.send_tweet(text=tweet)
                     
         except Exception as e:
             self.logger.error(
