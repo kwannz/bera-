@@ -5,8 +5,11 @@ from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 
 from ..ai_response.generator import ResponseGenerator
+from ..ai_response.model_manager import AIModelManager, ModelType, ContentType
 from ..price_tracking.tracker import PriceTracker
 from ..news_monitoring.monitor import NewsMonitor
+from .tweet_generator import TweetGenerator
+from ..utils.logging_config import get_logger, DebugCategory
 
 # Response Templates
 PRICE_UPDATE_TEMPLATE = "🐻 BERA Update: ${price} | Vol: ${volume} | ${change}% 24h\n📊 {market_sentiment}"
@@ -30,7 +33,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BeraBot:
-    def __init__(self, api_key: str, api_secret: str, access_token: str, access_secret: str):
+    def __init__(
+        self,
+        api_key: str,
+        api_secret: str,
+        access_token: str,
+        access_secret: str,
+        openai_api_key: Optional[str] = None,
+        deepseek_api_key: Optional[str] = None
+    ):
         self.auth = tweepy.OAuthHandler(api_key, api_secret)
         self.auth.set_access_token(access_token, access_secret)
         self.api = tweepy.API(self.auth)
@@ -40,11 +51,24 @@ class BeraBot:
             access_token=access_token,
             access_token_secret=access_secret
         )
+        
+        # Initialize AI components
+        self.model_manager = AIModelManager(
+            model_type=ModelType.DEEPSEEK,
+            openai_api_key=openai_api_key,
+            deepseek_api_key=deepseek_api_key
+        )
+        self.tweet_generator = TweetGenerator(self.model_manager)
+        self.response_generator = ResponseGenerator()
+        
+        # Initialize data components
         self.price_tracker = PriceTracker()
         self.news_monitor = NewsMonitor()
-        self.response_generator = ResponseGenerator()
+        
+        # Initialize state
         self.last_mention_id: Optional[int] = None
         self.last_price_update = datetime.now() - timedelta(minutes=15)
+        self.last_news_update = datetime.now() - timedelta(hours=1)
         
     async def start(self):
         """Start the bot's main loop"""
@@ -68,39 +92,56 @@ class BeraBot:
             logger.error(f"Error checking mentions: {str(e)}")
             
     async def handle_mention(self, mention):
-        """Handle user mentions with Eliza-style responses"""
+        """Handle user mentions with AI-powered responses"""
         try:
             text = mention.text.lower()
-            response = ""
+            context = {}
             
+            # Build context for AI response
             if any(word in text for word in ["ido", "upcoming", "launch"]):
                 idos = await self.news_monitor.fetch_upcoming_idos()
-                if idos:
-                    response = self._format_ido_response(idos[:3])
-                else:
-                    response = "No upcoming IDOs found at the moment. I'll keep you updated!"
-                    
+                context = {
+                    "topic": "IDO information",
+                    "data": idos if idos else [],
+                    "query_type": "ido"
+                }
+                
             elif any(word in text for word in ["news", "update", "latest"]):
                 news = await self.news_monitor.fetch_latest_news()
-                if news:
-                    response = self._format_news_response(news[0])
-                else:
-                    response = "No recent news updates available. Check back soon!"
-                    
+                context = {
+                    "topic": "ecosystem news",
+                    "data": news if news else [],
+                    "query_type": "news"
+                }
+                
             elif any(word in text for word in ["price", "bera", "token", "$"]):
                 price_data = await self.price_tracker.get_price_data()
-                response = self.price_tracker.format_price_report(price_data)
+                context = {
+                    "topic": "market data",
+                    "data": price_data if price_data else {},
+                    "query_type": "price"
+                }
                 
-            else:
-                response = await self.response_generator.generate_response(mention.text)
-                
+            # Generate AI response with context
+            response = await self.model_manager.generate_content(
+                ContentType.REPLY,
+                {
+                    "query": mention.text,
+                    "context": str(context)
+                }
+            )
+            
             if response:
                 self.client.create_tweet(
                     text=f"@{mention.user.screen_name} {response}"[:280],
                     in_reply_to_tweet_id=mention.id
                 )
+                
         except Exception as e:
-            logger.error(f"Error handling mention: {str(e)}")
+            self.logger.error(
+                f"Error handling mention: {str(e)}",
+                extra={"category": DebugCategory.API.value}
+            )
             
     def _format_ido_response(self, idos: List[Dict]) -> str:
         responses = []
@@ -121,14 +162,36 @@ class BeraBot:
         )[:280]
         
     async def check_scheduled_updates(self):
-        """Post scheduled updates (price updates every 15 minutes)"""
+        """Post scheduled updates"""
         try:
             now = datetime.now()
-            if (now - self.last_price_update).total_seconds() >= 900:  # 15 minutes
-                price_data = await self.price_tracker.get_price_data()
-                if price_data:
-                    tweet = self.price_tracker.format_price_report(price_data)
+            
+            # Price updates every 15 minutes
+            if (now - self.last_price_update).total_seconds() >= 900:
+                tweet = await self.tweet_generator.generate_market_update()
+                if tweet:
                     self.client.create_tweet(text=tweet)
                     self.last_price_update = now
+                    
+            # News updates every hour
+            if (now - self.last_news_update).total_seconds() >= 3600:
+                tweet = await self.tweet_generator.generate_news_update()
+                if tweet:
+                    self.client.create_tweet(text=tweet)
+                    self.last_news_update = now
+                    
+                # Also check for ecosystem updates
+                tweet = await self.tweet_generator.generate_ecosystem_update()
+                if tweet:
+                    self.client.create_tweet(text=tweet)
+                    
+                # Check for IDO announcements
+                tweet = await self.tweet_generator.generate_ido_announcement()
+                if tweet:
+                    self.client.create_tweet(text=tweet)
+                    
         except Exception as e:
-            logger.error(f"Error posting scheduled update: {str(e)}")
+            self.logger.error(
+                f"Error posting scheduled update: {str(e)}",
+                extra={"category": DebugCategory.API.value}
+            )
