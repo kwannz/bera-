@@ -9,15 +9,30 @@ logger = logging.getLogger(__name__)
 @pytest.mark.asyncio
 async def test_twitter_api_connection():
     """Test Twitter API connection and posting"""
-    # Get environment variables
-    api_key = os.environ.get("TWITTER_API_KEY")
-    api_secret = os.environ.get("TWITTER_API_SECRET")
-    bearer_token = os.environ.get("TWITTER_BEARER_TOKEN")
+    # Get environment variables directly from secure storage
+    api_key = os.environ.get("APIKey")
+    api_secret = os.environ.get("APIKeySecret")
+    bearer_token = os.environ.get("BearerToken")
+    
+    # Print environment variable status for debugging
+    logger.debug(f"API Key present: {bool(api_key)}")
+    logger.debug(f"API Secret present: {bool(api_secret)}")
+    logger.debug(f"Bearer Token present: {bool(bearer_token)}")
+    
+    # Verify required environment variables
+    if not all([api_key, api_secret, bearer_token]):
+        pytest.skip("Missing required Twitter API credentials")
+    
+    # Log environment variable status (first 5 chars only)
+    if api_key and api_secret and bearer_token:
+        logger.info(f"Using API key: {api_key[:5]}...")
+    else:
+        logger.error("Missing Twitter API credentials")
     
     # Verify credentials are present
-    assert api_key, "TWITTER_API_KEY environment variable is missing"
-    assert api_secret, "TWITTER_API_SECRET environment variable is missing"
-    assert bearer_token, "TWITTER_BEARER_TOKEN environment variable is missing"
+    assert api_key, "APIKey environment variable is missing"
+    assert api_secret, "APIKeySecret environment variable is missing"
+    assert bearer_token, "BearerToken environment variable is missing"
     
     logger.info(f"Using API key: {api_key[:5]}...")
     
