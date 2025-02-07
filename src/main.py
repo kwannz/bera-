@@ -3,6 +3,8 @@ import logging
 from config import (
     TWITTER_USERNAME,
     TWITTER_PASSWORD,
+    TWITTER_EMAIL,
+    TWITTER_2FA_SECRET,
     OLLAMA_URL
 )
 from src.twitter_bot.bot import BeraBot
@@ -17,6 +19,8 @@ async def main():
         bot = BeraBot(
             username=TWITTER_USERNAME,
             password=TWITTER_PASSWORD,
+            email=TWITTER_EMAIL,
+            two_factor_secret=TWITTER_2FA_SECRET,
             ollama_url=OLLAMA_URL
         )
         
