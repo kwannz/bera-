@@ -167,9 +167,11 @@ class TwitterClient:
                     },
                     json={"text": message}
                 ) as response:
+                    response_json = await response.json()
                     if response.status == 201:
-                        return await response.json()
+                        return response_json
                     self.logger.error(f"Tweet error: {response.status}")
+                    self.logger.error(f"Response details: {response_json}")
                     return None
                     
         except Exception as e:
