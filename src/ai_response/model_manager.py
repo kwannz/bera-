@@ -1,9 +1,11 @@
+import aiohttp
+import asyncio
 from typing import Optional, Dict, List
 from enum import Enum
-import openai
-import aiohttp
-import logging
 from ..utils.logging_config import get_logger, DebugCategory
+
+MAX_RETRIES = 3
+RETRY_DELAY = 1  # seconds
 
 class ModelType(Enum):
     OLLAMA = "ollama"
@@ -59,7 +61,8 @@ class AIModelManager:
         self,
         content_type: ContentType,
         params: Dict,
-        max_length: int = 280
+        max_length: int = 280,
+        retries: int = MAX_RETRIES
     ) -> Optional[str]:
         try:
             prompt = PROMPT_TEMPLATES[content_type].format(**params)
@@ -69,7 +72,27 @@ class AIModelManager:
                 extra={"category": DebugCategory.API.value}
             )
             
-            return await self._generate_ollama_content(prompt, max_length)
+            for attempt in range(retries):
+                try:
+                    content = await self._generate_ollama_content(prompt, max_length)
+                    if content:
+                        return content[:max_length]
+                    
+                    if attempt < retries - 1:
+                        self.logger.warning(
+                            f"Retrying content generation (attempt {attempt + 1}/{retries})",
+                            extra={"category": DebugCategory.API.value}
+                        )
+                        await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+                except Exception as e:
+                    if attempt < retries - 1:
+                        self.logger.warning(
+                            f"Error in content generation (attempt {attempt + 1}/{retries}): {str(e)}",
+                            extra={"category": DebugCategory.API.value}
+                        )
+                        await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+                    else:
+                        raise
                 
         except Exception as e:
             self.logger.error(
@@ -83,7 +106,11 @@ class AIModelManager:
             payload = {
                 "model": "deepseek-r1:1.5b",
                 "messages": [{"role": "user", "content": prompt}],
-                "stream": False
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "num_predict": max_length
+                }
             }
             
             async with aiohttp.ClientSession() as session:
