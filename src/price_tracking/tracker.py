@@ -2,6 +2,11 @@ import requests
 import logging
 from datetime import datetime, timedelta
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
 class PriceTracker:
     def __init__(self):
         self.base_url = "https://beratrail.io/api/v1"
