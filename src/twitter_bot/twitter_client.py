@@ -48,23 +48,37 @@ class TwitterClient:
         """Authenticate with Twitter API using OAuth 1.0a"""
         try:
             # Step 1: Get request token
+            # Verify API key is present
+            if not self.api_key or not self.api_secret:
+                self.logger.error("Missing API key or secret")
+                return False
+                
+            # Prepare OAuth parameters
+            nonce = str(uuid.uuid4()).replace('-', '')
+            timestamp = str(int(time.time()))
+            
             oauth_params = {
                 "oauth_callback": "oob",
                 "oauth_consumer_key": self.api_key,
-                "oauth_nonce": str(uuid.uuid4()),
+                "oauth_nonce": nonce,
                 "oauth_signature_method": "HMAC-SHA1",
-                "oauth_timestamp": str(int(time.time())),
+                "oauth_timestamp": timestamp,
                 "oauth_version": "1.0"
             }
             
+            # Log OAuth parameters for debugging (excluding sensitive data)
+            self.logger.debug(f"OAuth params: nonce={nonce}, timestamp={timestamp}")
+            
+            # Generate OAuth signature
             url = "https://api.twitter.com/oauth/request_token"
             oauth_params["oauth_signature"] = self._generate_oauth_signature(
                 "POST", url, oauth_params
             )
             
+            # Format OAuth header according to Twitter API spec
             auth_header = "OAuth " + ", ".join([
-                f'{quote(k)}="{quote(str(v))}"'
-                for k, v in oauth_params.items()
+                f'{quote(k, safe="")}="{quote(str(v), safe="")}"'
+                for k, v in sorted(oauth_params.items())
             ])
             
             async with aiohttp.ClientSession() as session:
