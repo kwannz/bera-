@@ -69,14 +69,41 @@ class BeraBot:
         
     async def start(self):
         """Start the bot's main loop"""
-        while True:
-            try:
-                await self.check_mentions()
-                await self.check_scheduled_updates()
-                await asyncio.sleep(60)
-            except Exception as e:
-                logger.error(f"Error in main loop: {str(e)}")
-                await asyncio.sleep(60)
+        try:
+            # Login with credentials
+            self.logger.info("Logging in to Twitter...")
+            await self.scraper.login(
+                self.username,
+                self.password,
+                self.email,
+                self.two_factor_secret
+            )
+            
+            if not await self.scraper.isLoggedIn():
+                self.logger.error(
+                    "Failed to login to Twitter",
+                    extra={"category": DebugCategory.API.value}
+                )
+                return
+                
+            self.logger.info("Successfully logged in to Twitter")
+            
+            while True:
+                try:
+                    await self.check_mentions()
+                    await self.check_scheduled_updates()
+                    await asyncio.sleep(60)
+                except Exception as e:
+                    self.logger.error(
+                        f"Error in main loop: {str(e)}",
+                        extra={"category": DebugCategory.API.value}
+                    )
+                    await asyncio.sleep(60)
+        except Exception as e:
+            self.logger.error(
+                f"Error during Twitter login: {str(e)}",
+                extra={"category": DebugCategory.API.value}
+            )
                 
     async def check_mentions(self):
         """Check and respond to mentions"""
