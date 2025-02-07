@@ -20,29 +20,42 @@ class TwitterClient:
         self.oauth_token_secret = None
         
     def _generate_oauth_signature(self, method: str, url: str, params: Dict[str, str]) -> str:
-        """Generate OAuth 1.0a signature"""
-        # Sort parameters
+        """Generate OAuth 1.0a signature according to Twitter's specifications"""
+        # Verify required parameters
+        if not self.api_key or not self.api_secret:
+            raise ValueError("API key and secret are required for signature generation")
+            
+        # Sort parameters and encode values
         sorted_params = sorted(params.items())
-        param_str = "&".join([f"{quote(k)}={quote(str(v))}" for k, v in sorted_params])
+        param_str = "&".join([
+            f"{quote(str(k), safe='')}={quote(str(v), safe='')}"
+            for k, v in sorted_params
+        ])
         
         # Create signature base string
         base_str = "&".join([
-            method,
+            method.upper(),
             quote(url, safe=""),
             quote(param_str, safe="")
         ])
         
-        # Create signing key
-        signing_key = f"{quote(self.api_secret)}&{quote(self.oauth_token_secret or '')}"
+        self.logger.debug(f"Base string: {base_str}")
         
-        # Generate signature
+        # Create signing key
+        signing_key = f"{quote(self.api_secret, safe='')}&{quote(self.oauth_token_secret or '', safe='')}"
+        
+        # Generate HMAC-SHA1 signature
         signature = hmac.new(
-            signing_key.encode(),
-            base_str.encode(),
+            signing_key.encode('ascii'),
+            base_str.encode('ascii'),
             hashlib.sha1
         ).digest()
         
-        return base64.b64encode(signature).decode()
+        # Encode signature in base64
+        encoded_signature = base64.b64encode(signature).decode('ascii')
+        self.logger.debug(f"Generated signature: {encoded_signature}")
+        
+        return encoded_signature
         
     async def authenticate(self) -> bool:
         """Authenticate with Twitter API using OAuth 1.0a"""
