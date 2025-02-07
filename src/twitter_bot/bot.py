@@ -35,28 +35,25 @@ logger = logging.getLogger(__name__)
 class BeraBot:
     def __init__(
         self,
-        api_key: str,
-        api_secret: str,
-        access_token: str,
-        access_secret: str,
-        openai_api_key: Optional[str] = None,
-        deepseek_api_key: Optional[str] = None
+        username: str,
+        password: str,
+        ollama_url: str = "http://localhost:11434"
     ):
-        self.auth = tweepy.OAuthHandler(api_key, api_secret)
-        self.auth.set_access_token(access_token, access_secret)
-        self.api = tweepy.API(self.auth)
+        self.logger = get_logger(__name__)
+        self.username = username
+        self.password = password
+        
+        # Initialize Twitter client
+        auth = tweepy.OAuthHandler("", "")  # Empty strings for client-only auth
+        self.api = tweepy.API(auth)
         self.client = tweepy.Client(
-            consumer_key=api_key,
-            consumer_secret=api_secret,
-            access_token=access_token,
-            access_token_secret=access_secret
+            username=username,
+            password=password
         )
         
         # Initialize AI components
         self.model_manager = AIModelManager(
-            model_type=ModelType.DEEPSEEK,
-            openai_api_key=openai_api_key,
-            deepseek_api_key=deepseek_api_key
+            ollama_url=ollama_url
         )
         self.tweet_generator = TweetGenerator(self.model_manager)
         self.response_generator = ResponseGenerator()

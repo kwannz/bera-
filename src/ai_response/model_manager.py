@@ -6,8 +6,7 @@ import logging
 from ..utils.logging_config import get_logger, DebugCategory
 
 class ModelType(Enum):
-    OPENAI = "openai"
-    DEEPSEEK = "deepseek"
+    OLLAMA = "ollama"
 
 class ContentType(Enum):
     TWEET = "tweet"
@@ -50,15 +49,11 @@ Style: Professional with market insights, using bear-themed elements."""
 class AIModelManager:
     def __init__(
         self,
-        model_type: ModelType = ModelType.DEEPSEEK,
-        openai_api_key: Optional[str] = None,
-        deepseek_api_key: Optional[str] = None
+        ollama_url: str = "http://localhost:11434"
     ):
         self.logger = get_logger(__name__)
-        self.model_type = model_type
-        self.openai_client = openai.Client(api_key=openai_api_key) if openai_api_key else None
-        self.deepseek_api_key = deepseek_api_key
-        self.deepseek_api_url = "https://api.deepseek.com/v3/chat/completions"
+        self.model_type = ModelType.OLLAMA
+        self.ollama_url = ollama_url
         
     async def generate_content(
         self,
@@ -74,10 +69,7 @@ class AIModelManager:
                 extra={"category": DebugCategory.API.value}
             )
             
-            if self.model_type == ModelType.OPENAI:
-                return await self._generate_openai_content(prompt, max_length)
-            else:
-                return await self._generate_deepseek_content(prompt, max_length)
+            return await self._generate_ollama_content(prompt, max_length)
                 
         except Exception as e:
             self.logger.error(
@@ -86,54 +78,32 @@ class AIModelManager:
             )
             return None
             
-    async def _generate_openai_content(self, prompt: str, max_length: int) -> Optional[str]:
+    async def _generate_ollama_content(self, prompt: str, max_length: int) -> Optional[str]:
         try:
-            response = await self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_length,
-                temperature=0.7
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            self.logger.error(
-                f"OpenAI API error: {str(e)}",
-                extra={"category": DebugCategory.API.value}
-            )
-            return None
-            
-    async def _generate_deepseek_content(self, prompt: str, max_length: int) -> Optional[str]:
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.deepseek_api_key}",
-                "Content-Type": "application/json"
-            }
             payload = {
                 "model": "deepseek-r1:1.5b",
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_length,
-                "temperature": 0.7
+                "stream": False
             }
             
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    self.deepseek_api_url,
-                    headers=headers,
+                    f"{self.ollama_url}/api/chat",
                     json=payload
                 ) as response:
                     if response.status == 200:
                         result = await response.json()
-                        return result["choices"][0]["message"]["content"]
+                        return result["message"]["content"]
                     else:
                         error_text = await response.text()
                         self.logger.error(
-                            f"Deepseek API error: {error_text}",
+                            f"Ollama API error: {error_text}",
                             extra={"category": DebugCategory.API.value}
                         )
                         return None
         except Exception as e:
             self.logger.error(
-                f"Deepseek API error: {str(e)}",
+                f"Ollama API error: {str(e)}",
                 extra={"category": DebugCategory.API.value}
             )
             return None
