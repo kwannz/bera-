@@ -19,7 +19,9 @@ class ResponseFormatter:
             assert isinstance(raw_response, dict)
             return ResponseFormatter._apply_market_template(raw_response)
         elif data_type == ContentType.NEWS:
-            return ResponseFormatter._apply_news_template(raw_response)
+            if isinstance(raw_response, list):
+                return ResponseFormatter._apply_news_template(raw_response)
+            return ""
         return str(raw_response)
 
     @staticmethod

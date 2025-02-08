@@ -72,7 +72,9 @@ async def chat_endpoint(request: ChatRequest):
         # Format response with error handling
         # Handle market data with proper error messages
         market_data: Dict[str, str] = {"error": "Unexpected error"}
-        if not isinstance(price_data, Exception):
+        if isinstance(price_data, Exception):
+            market_data = {"error": "Unexpected error"}
+        else:
             try:
                 if isinstance(price_data, dict):
                     berachain_data = price_data.get("berachain", {})
@@ -88,6 +90,10 @@ async def chat_endpoint(request: ChatRequest):
                                 berachain_data.get("usd_24h_change", "0")
                             )
                         }
+                    else:
+                        market_data = {"error": "Rate limit exceeded"}
+                else:
+                    market_data = {"error": "Rate limit exceeded"}
             except (TypeError, AttributeError):
                 market_data = {"error": "Rate limit exceeded"}
 
