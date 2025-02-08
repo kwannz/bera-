@@ -194,7 +194,7 @@ export async function followUser(
   });
 
   // Install auth headers
-  await auth.installTo(headers, 'https://api.twitter.com/1.1/friendships/create.json');
+  await auth.installTo(headers);
   
   // Make the follow request using auth.fetch
   const res = await auth.fetch(
