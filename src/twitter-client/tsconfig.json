@@ -1,0 +1,25 @@
+{
+  "extends": "@tsconfig/node16/tsconfig.json",
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/test-utils.ts"],
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "commonjs",
+    "lib": ["es2021", "dom"],
+    "downlevelIteration": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "sourceMap": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "declaration": true,
+    "declarationMap": true,
+    "declarationDir": "./dist",
+    "strict": true,
+    "noImplicitAny": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "stripInternal": true,
+    "types": ["jest"]
+  }
+}
