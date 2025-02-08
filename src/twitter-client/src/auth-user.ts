@@ -64,11 +64,11 @@ export class TwitterUserAuth extends TwitterGuestAuth {
     options?: Partial<TwitterAuthOptions>
   ) {
     super(bearerToken, options);
-    this.username = process.env.TWITTER_USERNAME || '';
-    this.password = process.env.TWITTER_PASSWORD || '';
-    this.email = process.env.TWITTER_EMAIL || '';
+    this.username = process.env.tusername || '';
+    this.password = process.env.tPassword || '';
+    this.email = process.env.tEmail || '';
     if (!this.username || !this.password || !this.email) {
-      throw new Error('TWITTER_USERNAME, TWITTER_PASSWORD, and TWITTER_EMAIL must be defined');
+      throw new Error('Twitter credentials not available');
     }
   }
 
