@@ -23,13 +23,24 @@ class PriceTracker:
         self.api_key = os.getenv("BERATRAIL_API_KEY")
         # 5 minutes default
         self.cache_ttl = int(os.getenv("PRICE_CACHE_TTL", "300"))
-        self.api_url = "https://beratrail.io/api/v1"
+        self.api_url = os.getenv(
+            "BERATRAIL_API_URL",
+            "https://api.beratrail.io/v1"  # Default API URL
+        )
         self.logger = get_logger(__name__)
         self._initialized = False
+        
+        # Validate required configuration
+        missing_vars = []
         if not self.api_key:
+            missing_vars.append("BERATRAIL_API_KEY")
+        if not self.api_url:
+            missing_vars.append("BERATRAIL_API_URL")
+            
+        if missing_vars:
             self.logger.error(
-                "Missing required environment variable: "
-                "BERATRAIL_API_KEY",
+                "Missing required environment variables: " +
+                ", ".join(missing_vars),
                 extra={"category": DebugCategory.CONFIG.value}
             )
 
