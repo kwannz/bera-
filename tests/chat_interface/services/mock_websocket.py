@@ -27,7 +27,7 @@ class MockWebSocket:
             ):
                 # Use 429 for rate limit
                 raise websockets.exceptions.InvalidStatusCode(None, 429)
-            
+
             # Cancel existing task if any
             if hasattr(self, '_message_task') and self._message_task:
                 try:
@@ -47,19 +47,21 @@ class MockWebSocket:
                     self.message_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
-            
+
             # Set flags before starting task
             self._initialized = True
             self._running = True
             self.connected = True
-            
+
             # Start message sending task
             self._message_task = asyncio.create_task(self._send_messages())
             
             # Wait for task to start and verify it's running
             try:
-                async with asyncio.timeout(0.5):  # Overall timeout for initialization
-                    for _ in range(5):  # Try up to 5 times
+                # Overall timeout for initialization
+                async with asyncio.timeout(0.5):
+                    # Try up to 5 times
+                    for _ in range(5):
                         if self._message_task and not self._message_task.done():
                             break
                         await asyncio.sleep(0.1)
@@ -174,8 +176,11 @@ class MockWebSocket:
             raise
         except Exception as exc:
             print(f"Error receiving message: {str(exc)}")
-            if not (self.connected and self._running and 
-                   self._initialized):
+            if not (
+                self.connected and
+                self._running and
+                self._initialized
+            ):
                 raise websockets.exceptions.ConnectionClosed(None, None)
             return json.dumps({
                 "e": "error",
@@ -197,7 +202,7 @@ class MockWebSocket:
                         return
 
                     symbol = subscription.split("@")[0].upper()
-                    
+
                     # Send subscription confirmation
                     sub_confirm = {
                         "result": None,
