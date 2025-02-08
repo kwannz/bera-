@@ -1,15 +1,24 @@
 # Berachain Ecosystem Monitor
 
-A monitoring system for tracking and analyzing information about the Berachain ecosystem.
+A comprehensive monitoring and analysis system for the Berachain ecosystem, featuring real-time price tracking, multi-DEX integration, and AI-powered insights.
 
 ## Features
-- Real-time BERA token price and volume tracking
-- Automated news monitoring and updates
-- IDO tracking and announcements
+- Real-time BERA token price tracking across multiple DEXs:
+  - PancakeSwap integration
+  - Uniswap integration
+  - Jupiter (Solana) integration
+- WebSocket-based live price updates
+- TradingView chart integration
+- BeraTrail API integration with fallback sources
 - AI-powered analysis using Ollama (deepseek-r1:1.5b)
+- Automated news monitoring and BeraHome updates
+- IDO tracking and announcements
+- Advanced error handling with circuit breakers
+- Rate limiting and request throttling
 
 ## Prerequisites
-- Python 3.8+
+- Python 3.12+
+- Redis server
 - Ollama with deepseek-r1:1.5b model
 
 ## Installation
@@ -23,6 +32,7 @@ cd bera-
 2. Install dependencies:
 ```bash
 pip install -r requirements.txt
+pip install -r tests/requirements-test.txt  # For running tests
 ```
 
 3. Configure environment variables:
@@ -32,8 +42,19 @@ cp .env.example .env
 
 Edit `.env` with your configuration:
 ```
-OPENAI_API_KEY=your_openai_key
+# AI Model Configuration
 OLLAMA_URL=http://localhost:11434
+DEEPSEEK_API_KEY=your_deepseek_key
+
+# Price API Keys
+BERATRAIL_API_KEY=your_beratrail_key
+COINGECKO_API_KEY=your_coingecko_key
+OKX_API_KEY=your_okx_key
+OKX_SECRET_KEY=your_okx_secret
+
+# Redis Configuration
+REDIS_URL=redis://localhost:6379
+PRICE_CACHE_TTL=300  # Cache TTL in seconds
 ```
 
 ## Usage
@@ -98,21 +119,103 @@ mypy src/
 
 ```
 src/
-├── ai_response/        # AI analysis using Ollama
-├── news_monitoring/    # BeraHome ecosystem news scraping
-├── price_tracking/     # BERA token price and volume tracking
-├── token_analytics/    # Token validation and analytics
-└── utils/             # Shared utilities and logging
+├── ai_response/           # AI analysis using Ollama/Deepseek
+│   ├── model_manager.py   # AI model integration
+│   └── generator.py       # Response generation
+├── chat_interface/        # Main chat interface
+│   ├── handlers/          # API and WebSocket handlers
+│   ├── models/           # Data models
+│   ├── services/         # Core services
+│   │   ├── price_tracker.py      # BeraTrail price tracking
+│   │   ├── dex_price_tracker.py  # Multi-DEX integration
+│   │   ├── price_websocket.py    # WebSocket price updates
+│   │   ├── chart_service.py      # TradingView integration
+│   │   ├── news_monitor.py       # BeraHome news scraping
+│   │   └── analytics_collector.py # Market analytics
+│   └── utils/            # Shared utilities
+│       ├── circuit_breaker.py    # Error handling
+│       ├── rate_limiter.py       # Request throttling
+│       ├── metrics.py            # Performance tracking
+│       └── retry.py              # Retry mechanisms
+└── utils/                # Global utilities
+    └── logging_config.py # Logging configuration
 
-tests/                 # Test suite
-docs/                  # Documentation
+tests/                   # Test suite
+├── chat_interface/      # Interface tests
+│   ├── services/        # Service tests
+│   └── utils/          # Utility tests
+└── conftest.py         # Test fixtures
+
+docs/                   # Documentation
+└── environment.md      # Environment setup guide
+```
+
+## Development
+
+### Environment Setup
+1. Start Redis server:
+```bash
+sudo service redis-server start
+```
+
+2. Set up API keys in `.env`:
+```bash
+# Required API keys
+export BERATRAIL_API_KEY="your_key"
+export DEEPSEEK_API_KEY="your_key"
+export COINGECKO_API_KEY="your_key"
+export OKX_API_KEY="your_key"
+export OKX_SECRET_KEY="your_key"
+```
+
+3. Start Ollama server:
+```bash
+ollama run deepseek-r1:1.5b
+```
+
+### Running Tests
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run specific test files
+pytest tests/chat_interface/services/test_dex_price_tracker.py -v
+pytest tests/chat_interface/services/test_price_websocket.py -v
+pytest tests/chat_interface/services/test_chart_service.py -v
+
+# Run with debug logging
+pytest tests/ -v --log-cli-level=DEBUG
+```
+
+### Code Quality
+```bash
+# Style checking
+flake8 src/ tests/
+
+# Type checking
+mypy src/
+
+# Format code
+black src/ tests/
 ```
 
 ## Contributing
 1. Fork the repository
-2. Create your feature branch
-3. Run tests and ensure code quality
-4. Submit a pull request
+2. Create a feature branch:
+```bash
+git checkout -b devin/$(date +%s)-feature-name
+```
+3. Run tests and ensure code quality:
+```bash
+python -m pytest tests/
+flake8 src/ tests/
+mypy src/
+```
+4. Submit a pull request with:
+- Clear description of changes
+- Test coverage for new features
+- Documentation updates
+- Link to related issues
 
 ## License
 MIT License```

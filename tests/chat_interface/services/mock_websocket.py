@@ -2,7 +2,7 @@ import json
 import time
 import asyncio
 import websockets
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 
 
 class MockWebSocket:
@@ -22,9 +22,12 @@ class MockWebSocket:
         """Simulate connection"""
         try:
             # Check rate limit before allowing connection
-            if not await self.rate_limiter.check_rate_limit("binance_ws", limit=5, window=60):
-                raise websockets.exceptions.InvalidStatusCode(None, 429)  # Use 429 for rate limit
-            
+            if not await self.rate_limiter.check_rate_limit(
+                "binance_ws", limit=5, window=60
+            ):
+                # Use 429 for rate limit
+                raise websockets.exceptions.InvalidStatusCode(None, 429)
+
             # Cancel existing task if any
             if hasattr(self, '_message_task') and self._message_task:
                 try:
@@ -44,45 +47,53 @@ class MockWebSocket:
                     self.message_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
-            
+
             # Set flags before starting task
             self._initialized = True
             self._running = True
             self.connected = True
-            
+
             # Start message sending task
             self._message_task = asyncio.create_task(self._send_messages())
             
             # Wait for task to start and verify it's running
             try:
-                async with asyncio.timeout(0.5):  # Overall timeout for initialization
-                    for _ in range(5):  # Try up to 5 times
+                # Overall timeout for initialization
+                async with asyncio.timeout(0.5):
+                    # Try up to 5 times
+                    for _ in range(5):
                         if self._message_task and not self._message_task.done():
                             break
                         await asyncio.sleep(0.1)
                     else:
                         raise RuntimeError("Failed to start message task")
-            except Exception as e:
+            except Exception as exc:
                 self._initialized = False
                 self._running = False
                 self.connected = False
                 if hasattr(self, '_message_task') and self._message_task:
                     self._message_task.cancel()
                     try:
-                        await asyncio.wait_for(self._message_task, timeout=0.1)
+                        await asyncio.wait_for(
+                            self._message_task, timeout=0.1
+                        )
                     except (asyncio.TimeoutError, asyncio.CancelledError):
                         pass
                     self._message_task = None
-                raise RuntimeError(f"Failed to initialize WebSocket: {str(e)}")
+                raise RuntimeError(
+                    f"Failed to initialize WebSocket: {str(exc)}"
+                )
                 
-        except Exception as e:
+        except Exception:
             self._initialized = False
             self._running = False
             self.connected = False
             if hasattr(self, '_message_task') and self._message_task:
                 self._message_task.cancel()
                 try:
-                    await asyncio.wait_for(self._message_task, timeout=0.1)
+                    await asyncio.wait_for(
+                        self._message_task, timeout=0.1
+                    )
                 except (asyncio.TimeoutError, asyncio.CancelledError):
                     pass
                 self._message_task = None
@@ -97,28 +108,36 @@ class MockWebSocket:
             data = json.loads(message)
             if data["method"] == "SUBSCRIBE":
                 # Check rate limit before allowing subscription
-                if not await self.rate_limiter.check_rate_limit("binance_ws", limit=5, window=60):
+                if not await self.rate_limiter.check_rate_limit(
+                    "binance_ws",
+                    limit=5,
+                    window=60
+                ):
                     raise websockets.exceptions.InvalidStatusCode(None, 429)
-                    
+
                 # Add new subscriptions
                 for param in data["params"]:
                     if param not in self.subscriptions:
                         self.subscriptions.append(param)
-                        
+
             elif data["method"] == "UNSUBSCRIBE":
                 # Remove subscriptions
                 for param in data["params"]:
                     if param in self.subscriptions:
                         self.subscriptions.remove(param)
-                        
+
             if not self.connected:  # Check connection after operation
                 raise websockets.exceptions.ConnectionClosed(None, None)
-                
+
         except json.JSONDecodeError:
-            raise websockets.exceptions.InvalidMessage("Invalid message format")
+            raise websockets.exceptions.InvalidMessage(
+                "Invalid message format"
+            )
         except KeyError:
-            raise websockets.exceptions.InvalidMessage("Missing required fields")
-        except Exception as e:
+            raise websockets.exceptions.InvalidMessage(
+                "Missing required fields"
+            )
+        except Exception:
             if not self.connected:
                 raise websockets.exceptions.ConnectionClosed(None, None)
             raise
@@ -140,16 +159,20 @@ class MockWebSocket:
                 # If queue is empty, return error immediately
                 return json.dumps({"e": "error", "m": "No messages available"})
             
-            if not (self.connected and self._running and self._initialized):
+            if not (
+                self.connected and self._running and self._initialized
+            ):
                 raise websockets.exceptions.ConnectionClosed(None, None)
-                
+            
             # Parse message and update timestamp
             try:
                 data = json.loads(message)
                 data["E"] = int(time.time() * 1000)
                 
-                # Only queue another message if we're still connected and have space
-                if self.connected and self._running and self._initialized:
+                # Only queue another message if we're still connected
+                if (
+                    self.connected and self._running and self._initialized
+                ):
                     try:
                         self.message_queue.put_nowait(json.dumps(data))
                     except asyncio.QueueFull:
@@ -161,11 +184,18 @@ class MockWebSocket:
             
         except asyncio.CancelledError:
             raise
-        except Exception as e:
-            print(f"Error receiving message: {str(e)}")
-            if not (self.connected and self._running and self._initialized):
+        except Exception as exc:
+            print(f"Error receiving message: {str(exc)}")
+            if not (
+                self.connected and
+                self._running and
+                self._initialized
+            ):
                 raise websockets.exceptions.ConnectionClosed(None, None)
-            return json.dumps({"e": "error", "m": "Error receiving message"})
+            return json.dumps({
+                "e": "error",
+                "m": "Error receiving message"
+            })
 
     async def _send_messages(self) -> None:
         """Continuously send messages in the background"""
@@ -176,11 +206,13 @@ class MockWebSocket:
                     continue
 
                 for subscription in list(self.subscriptions):
-                    if not (self.connected and self._running and self._initialized):
+                    if not (
+                        self.connected and self._running and self._initialized
+                    ):
                         return
 
                     symbol = subscription.split("@")[0].upper()
-                    
+
                     # Send subscription confirmation
                     sub_confirm = {
                         "result": None,
@@ -192,7 +224,9 @@ class MockWebSocket:
                         continue
 
                     # Send one price update immediately
-                    if not (self.connected and self._running and self._initialized):
+                    if not (
+                        self.connected and self._running and self._initialized
+                    ):
                         return
 
                     data = {
