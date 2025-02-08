@@ -3,6 +3,7 @@ import asyncio
 from typing import AsyncGenerator
 import pytest
 import redis.asyncio
+import websockets
 
 from src.ai_response.model_manager import AIModelManager
 from src.chat_interface.handlers.api_handler import ChatHandler
@@ -11,9 +12,11 @@ from src.chat_interface.services.context_service import ContextManager
 from src.chat_interface.services.news_monitor import NewsMonitor
 from src.chat_interface.services.price_tracker import PriceTracker
 from src.chat_interface.services.response_formatter import ResponseFormatter
+from src.chat_interface.services.price_websocket import BinanceWebSocket
 from src.chat_interface.utils.circuit_breaker import CircuitBreaker
 from src.chat_interface.utils.metrics import Metrics
 from src.chat_interface.utils.rate_limiter import RateLimiter
+from .services.mock_websocket import MockWebSocket
 
 
 @pytest.fixture(scope="function")
@@ -108,6 +111,45 @@ def circuit_breaker() -> CircuitBreaker:
 def response_formatter() -> ResponseFormatter:
     """Create a response formatter instance for testing"""
     return ResponseFormatter()
+
+
+@pytest.fixture
+async def websocket_client(
+    rate_limiter,
+    metrics,
+    circuit_breaker,
+    monkeypatch
+) -> AsyncGenerator[BinanceWebSocket, None]:
+    """Create a WebSocket client instance for testing"""
+    client = BinanceWebSocket(rate_limiter, metrics, circuit_breaker)
+    mock_ws = None
+
+    # Mock websockets.connect to return our MockWebSocket
+    async def mock_connect(url):
+        nonlocal mock_ws
+        mock_ws = MockWebSocket(url, rate_limiter=rate_limiter)
+        await mock_ws.connect()
+        return mock_ws
+
+    monkeypatch.setattr(websockets, "connect", mock_connect)
+
+    # Initialize client with longer timeout
+    await asyncio.wait_for(client.initialize(), timeout=10.0)
+
+    # Verify initialization
+    assert client._initialized is True, "WebSocket should be initialized"
+    assert client._running is True, "WebSocket should be running"
+    assert client.ws is not None, "WebSocket connection should be established"
+
+    yield client
+
+    # Clean up in reverse order
+    if client:
+        await client.close()
+    if mock_ws:
+        await mock_ws.close()
+    # Wait for cleanup
+    await asyncio.sleep(0.2)
 
 
 @pytest.fixture(scope="function")

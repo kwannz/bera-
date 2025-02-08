@@ -1,73 +1,16 @@
 import pytest
-import json
 import asyncio
 from typing import Dict, Any
 import websockets
 from src.chat_interface.services.price_websocket import BinanceWebSocket
-from src.chat_interface.utils.rate_limiter import RateLimiter
-from src.chat_interface.utils.circuit_breaker import CircuitBreaker
-from src.chat_interface.utils.metrics import Metrics
-from tests.chat_interface.services.mock_websocket import MockWebSocket
-
-
-@pytest.fixture
-def metrics():
-    """Create a metrics instance for testing"""
-    return Metrics()
-
-
-@pytest.fixture
-def circuit_breaker():
-    """Create a circuit breaker instance for testing"""
-    return CircuitBreaker()
-
-
-@pytest.fixture
-async def websocket_client(
-    rate_limiter,
-    metrics,
-    circuit_breaker,
-    monkeypatch,
-    event_loop
-) -> BinanceWebSocket:
-    """Create a WebSocket client instance for testing"""
-    client = BinanceWebSocket(rate_limiter, metrics, circuit_breaker)
-    mock_ws = None
-
-    # Mock websockets.connect to return our MockWebSocket
-    async def mock_connect(url):
-        nonlocal mock_ws
-        mock_ws = MockWebSocket(url, rate_limiter=rate_limiter)
-        await mock_ws.connect()
-        return mock_ws
-
-    monkeypatch.setattr(websockets, "connect", mock_connect)
-
-    # Initialize client with longer timeout
-    await asyncio.wait_for(client.initialize(), timeout=10.0)
-
-    # Verify initialization
-    assert client._initialized is True, "WebSocket should be initialized"
-    assert client._running is True, "WebSocket should be running"
-    assert client.ws is not None, "WebSocket connection should be established"
-
-    try:
-        yield client
-    finally:
-        # Clean up in reverse order
-        if client:
-            await client.close()
-        if mock_ws:
-            await mock_ws.close()
-        # Wait for cleanup
-        await asyncio.sleep(0.2)
+from ..services.mock_websocket import MockWebSocket
 
 
 @pytest.mark.asyncio
 async def test_websocket_initialization(websocket_client):
     """Test WebSocket client initialization"""
     async with asyncio.timeout(5.0):
-        client = websocket_client
+        client = await anext(websocket_client)
         # Initialize should already be called by fixture
         assert client._initialized is True, "WebSocket should be initialized"
         assert client._running is True, "WebSocket should be running"
@@ -82,7 +25,7 @@ async def test_websocket_initialization(websocket_client):
 @pytest.mark.asyncio
 async def test_price_subscription(websocket_client):
     """Test price update subscription"""
-    client = websocket_client
+    client = await anext(websocket_client)
     received_data = None
 
     async def price_callback(data: Dict[str, Any]):
@@ -106,7 +49,7 @@ async def test_price_subscription(websocket_client):
 @pytest.mark.asyncio
 async def test_websocket_reconnection(websocket_client):
     """Test WebSocket reconnection logic"""
-    client = websocket_client
+    client = await anext(websocket_client)
     
     async def verify_connection():
         """Helper to verify connection state"""
@@ -159,7 +102,7 @@ async def test_websocket_reconnection(websocket_client):
 @pytest.mark.asyncio
 async def test_unsubscribe_price_updates(websocket_client):
     """Test unsubscribing from price updates"""
-    client = websocket_client
+    client = await anext(websocket_client)
     symbol = "BERAUSDT"
     
     async def verify_state(expected_subscribed: bool):
@@ -199,7 +142,7 @@ async def test_unsubscribe_price_updates(websocket_client):
 @pytest.mark.asyncio
 async def test_rate_limit_handling(websocket_client):
     """Test rate limit handling for WebSocket connections"""
-    client = websocket_client
+    client = await anext(websocket_client)
     
     async def verify_subscription(symbol: str, should_succeed: bool):
         """Helper to verify subscription attempt"""
@@ -239,7 +182,7 @@ async def test_rate_limit_handling(websocket_client):
 @pytest.mark.asyncio
 async def test_message_handler(websocket_client):
     """Test WebSocket message handling"""
-    client = websocket_client
+    client = await anext(websocket_client)
     received_data = None
     callback_executed = asyncio.Event()
 
