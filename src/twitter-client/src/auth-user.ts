@@ -115,84 +115,35 @@ export class TwitterUserAuth extends TwitterGuestAuth {
       await super.login();
       let next = await this.initLogin();
       
-      // Handle JS instrumentation
-      next = await this.handleJsInstrumentationSubtask(next);
+      let flow = await this.handleJsInstrumentationSubtask(next);
+      if ('err' in flow) throw flow.err;
       
-      // Enter username/email
-      next = await this.handleEnterUserIdentifierSSO({
-        ...next,
-        subtask_inputs: {
-          ...next.subtask_inputs,
-          text_input: username,
-          link: "next_link"
-        }
-      });
-
-      // Enter password
-      next = await this.handleEnterPassword({
-        ...next,
-        subtask_inputs: {
-          ...next.subtask_inputs,
-          text_input: password,
-          link: "next_link"
-        }
-      });
-
-      // Handle any account checks
-      if (next.subtask_id === 'AccountDuplicationCheck') {
-        next = await this.handleAccountDuplicationCheck(next);
+      flow = await this.handleEnterUserIdentifierSSO(flow, username);
+      if ('err' in flow) throw flow.err;
+      
+      flow = await this.handleEnterPassword(flow, password);
+      if ('err' in flow) throw flow.err;
+      
+      if ('subtask' in flow && flow.subtask?.subtask_id === 'AccountDuplicationCheck') {
+        flow = await this.handleAccountDuplicationCheck(flow);
+        if ('err' in flow) throw flow.err;
       }
-
-      // Handle 2FA if needed
-      if (next.subtask_id === 'LoginTwoFactorAuthChallenge' && twoFactorSecret) {
-        next = await this.handleTwoFactorAuthChallenge(next, twoFactorSecret);
+      
+      if ('subtask' in flow && flow.subtask?.subtask_id === 'LoginTwoFactorAuthChallenge' && twoFactorSecret) {
+        flow = await this.handleTwoFactorAuthChallenge(flow, twoFactorSecret);
+        if ('err' in flow) throw flow.err;
       }
-
-      // Handle success
-      if (next.subtask_id === 'LoginSuccessSubtask') {
-        await this.handleSuccessSubtask(next);
+      
+      if ('subtask' in flow && flow.subtask?.subtask_id === 'LoginSuccessSubtask') {
+        await this.handleSuccessSubtask(flow);
       } else {
-        throw new Error(`Unexpected subtask: ${next.subtask_id}`);
-      }
+        throw new Error('Login flow did not complete successfully');
 
-    let next = await this.initLogin();
-    while ('subtask' in next && next.subtask) {
-      if (next.subtask.subtask_id === 'LoginJsInstrumentationSubtask') {
-        next = await this.handleJsInstrumentationSubtask(next);
-      } else if (next.subtask.subtask_id === 'LoginEnterUserIdentifierSSO') {
-        next = await this.handleEnterUserIdentifierSSO(next, username);
-      } else if (
-        next.subtask.subtask_id === 'LoginEnterAlternateIdentifierSubtask'
-      ) {
-        next = await this.handleEnterAlternateIdentifierSubtask(
-          next,
-          email as string,
-        );
-      } else if (next.subtask.subtask_id === 'LoginEnterPassword') {
-        next = await this.handleEnterPassword(next, password);
-      } else if (next.subtask.subtask_id === 'AccountDuplicationCheck') {
-        next = await this.handleAccountDuplicationCheck(next);
-      } else if (next.subtask.subtask_id === 'LoginTwoFactorAuthChallenge') {
-        if (twoFactorSecret) {
-          next = await this.handleTwoFactorAuthChallenge(next, twoFactorSecret);
-        } else {
-          throw new Error(
-            'Requested two factor authentication code but no secret provided',
-          );
-        }
-      } else if (next.subtask.subtask_id === 'LoginAcid') {
-        next = await this.handleAcid(next, email);
-      } else if (next.subtask.subtask_id === 'LoginSuccessSubtask') {
-        next = await this.handleSuccessSubtask(next);
-      } else {
-        throw new Error(`Unknown subtask ${next.subtask.subtask_id}`);
+      if (appKey && appSecret && accessToken && accessSecret) {
+        this.loginWithV2(appKey, appSecret, accessToken, accessSecret);
       }
-    }
-    if (appKey && appSecret && accessToken && accessSecret) {
-      this.loginWithV2(appKey, appSecret, accessToken, accessSecret);
-    }
-    if ('err' in next) {
-      throw next.err;
+    } catch (error) {
+      throw new Error(`Login failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
