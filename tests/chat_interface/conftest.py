@@ -97,18 +97,27 @@ async def context_manager(
 
 
 @pytest.fixture
-def metrics() -> Metrics:
-    return Metrics()
+async def metrics() -> Metrics:
+    """Create a metrics instance for testing"""
+    metrics = Metrics()
+    await metrics.initialize()
+    return metrics
 
 
 @pytest.fixture
-def circuit_breaker() -> CircuitBreaker:
-    return CircuitBreaker()
+async def circuit_breaker() -> CircuitBreaker:
+    """Create a circuit breaker instance for testing"""
+    breaker = CircuitBreaker()
+    await breaker.initialize()
+    return breaker
 
 
 @pytest.fixture
-def response_formatter() -> ResponseFormatter:
-    return ResponseFormatter()
+async def response_formatter() -> ResponseFormatter:
+    """Create a response formatter instance for testing"""
+    formatter = ResponseFormatter()
+    await formatter.initialize()
+    return formatter
 
 
 @pytest.fixture(scope="function")
@@ -148,12 +157,10 @@ async def chat_handler(
     async def mock_generate_content(*args, **kwargs):
         return "AI generated response for testing"
 
-    # Initialize redis client first
-    redis = await redis_client
-
-    # Initialize rate_limiter with redis client
-    limiter = RateLimiter(redis)
-    await limiter.initialize()
+    # Initialize dependencies
+    initialized_rate_limiter = await rate_limiter
+    initialized_metrics = await metrics
+    initialized_circuit_breaker = await circuit_breaker
 
     # Initialize model manager with mock
     model_manager = AIModelManager()
@@ -164,40 +171,40 @@ async def chat_handler(
 
     # Initialize services with dependencies and mocks
     price_tracker = PriceTracker(
-        rate_limiter=limiter,
-        metrics=metrics,
-        circuit_breaker=circuit_breaker
+        rate_limiter=initialized_rate_limiter,
+        metrics=initialized_metrics,
+        circuit_breaker=initialized_circuit_breaker
     )
     await price_tracker.initialize()
     monkeypatch.setattr(price_tracker, "get_price_data", mock_get_price_data)
 
     news_monitor = NewsMonitor(
-        rate_limiter=limiter,
-        metrics=metrics,
-        circuit_breaker=circuit_breaker
+        rate_limiter=initialized_rate_limiter,
+        metrics=initialized_metrics,
+        circuit_breaker=initialized_circuit_breaker
     )
     await news_monitor.initialize()
     monkeypatch.setattr(news_monitor, "get_latest_news", mock_get_latest_news)
 
     analytics_collector = AnalyticsCollector(
-        rate_limiter=limiter,
-        metrics=metrics,
-        circuit_breaker=circuit_breaker
+        rate_limiter=initialized_rate_limiter,
+        metrics=initialized_metrics,
+        circuit_breaker=initialized_circuit_breaker
     )
     await analytics_collector.initialize()
     monkeypatch.setattr(
         analytics_collector, "analyze_market_sentiment", mock_analyze_sentiment
     )
 
-    # Create and initialize handler
+    # Create and initialize handler with initialized dependencies
     handler = ChatHandler(
-        rate_limiter=rate_limiter,
-        context_manager=context_manager,
+        rate_limiter=initialized_rate_limiter,
+        context_manager=await context_manager,
         price_tracker=price_tracker,
         news_monitor=news_monitor,
         analytics_collector=analytics_collector,
         model_manager=model_manager,
-        response_formatter=response_formatter
+        response_formatter=await response_formatter
     )
     try:
         await asyncio.wait_for(handler.initialize(), timeout=5.0)
