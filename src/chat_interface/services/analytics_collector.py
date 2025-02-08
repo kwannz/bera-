@@ -28,7 +28,7 @@ class AnalyticsCollector:
 
             # Use Deepseek API for sentiment analysis
             async with aiohttp.ClientSession() as session:
-                url = "https://api.deepseek.com/v3/chat/completions"
+                url = "https://api.deepseek.com/api/v3/chat/completions"
                 data = {
                     "model": "deepseek-r1:1.5b",
                     "messages": [
