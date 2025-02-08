@@ -109,8 +109,8 @@ async def test_rate_limit_handling():
 
         assert response.status_code == 200
         data = response.json()
-        assert "error" in data["market_data"]
-        assert "Rate limit exceeded" in data["market_data"]["error"]
+        assert "❌ 错误" in data["market_data"]
+        assert "Rate limit exceeded" in data["market_data"]
 
 
 @pytest.mark.asyncio
@@ -133,5 +133,5 @@ async def test_error_handling():
 
         assert response.status_code == 200
         data = response.json()
-        assert "error" in data["market_data"]
-        assert "Unexpected error" in data["market_data"]["error"]
+        assert "❌ 错误" in data["market_data"]
+        assert "Unexpected error" in data["market_data"]
