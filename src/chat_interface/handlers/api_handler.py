@@ -48,14 +48,19 @@ async def chat_endpoint(request: ChatRequest):
         price_data, news_data, sentiment = await asyncio.gather(*data_tasks)
 
         # Format response
+        market_data = {
+            "price": price_data["berachain"]["usd"],
+            "volume": price_data["berachain"]["usd_24h_vol"],
+            "change": price_data["berachain"]["usd_24h_change"]
+        }
         response = {
             "ai_response": ai_response,
             "market_data": response_formatter.format_response(
-                str(price_data),
+                market_data,
                 FormatterContentType.MARKET
             ),
             "news": response_formatter.format_response(
-                str(news_data),
+                news_data,
                 FormatterContentType.NEWS
             ),
             "sentiment": sentiment
