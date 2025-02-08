@@ -3,7 +3,7 @@ import { TwitterClient } from '../client';
 import { BerachainMonitor } from '../berachain';
 import { describe, beforeEach, it, expect, jest } from '@jest/globals';
 import { TwitterApi } from 'twitter-api-v2';
-import type { TweetV2PostTweetResult } from 'twitter-api-v2';
+import type { TweetV2PostTweetResult, TweetV2 } from 'twitter-api-v2';
 
 describe('BerachainMonitor', () => {
   let monitor: BerachainMonitor;
@@ -13,13 +13,16 @@ describe('BerachainMonitor', () => {
   beforeEach(async () => {
     const mockApi = {
       v2: {
-        tweet: (jest.fn() as jest.MockedFunction<() => Promise<TweetV2PostTweetResult>>).mockResolvedValue({
+        tweet: jest.fn().mockImplementation((): Promise<{ data: TweetV2 }> => Promise.resolve({
           data: {
             id: '123',
             text: 'Test tweet',
-            author_id: '456'
-          }
-        } as TweetV2PostTweetResult)
+            author_id: '456',
+            created_at: new Date().toISOString(),
+            edit_history_tweet_ids: ['123'],
+            conversation_id: '123'
+          } as TweetV2
+        }))
       }
     } as unknown as TwitterApi;
 
