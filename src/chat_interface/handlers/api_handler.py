@@ -4,9 +4,13 @@ from typing import Dict, Optional
 import asyncio
 
 from ..services.context_service import ContextManager
-from ..services.response_formatter import ResponseFormatter, ContentType
-from src.ai_response.model_manager import AIModelManager
+from ..services.response_formatter import ResponseFormatter
+from src.ai_response.model_manager import (
+    AIModelManager,
+    ContentType as ModelContentType
+)
 from src.ai_response.generator import ResponseGenerator
+from ..services.response_formatter import ContentType as FormatterContentType
 
 
 app = FastAPI()
@@ -25,7 +29,17 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
     try:
-        # 并行获取数据
+        # Get context for AI response
+        context = await context_manager.get_context(request.session_id)
+
+        # Generate AI response
+        ai_response = await model_manager.generate_content(
+            ModelContentType.MARKET,
+            {"message": request.message, "context": context},
+            max_length=280
+        )
+
+        # Get additional data in parallel
         data_tasks = [
             _get_price_data(),
             _get_latest_news(),
@@ -33,20 +47,21 @@ async def chat_endpoint(request: ChatRequest):
         ]
         price_data, news_data, sentiment = await asyncio.gather(*data_tasks)
 
-        # 格式化响应
+        # Format response
         response = {
+            "ai_response": ai_response,
             "market_data": response_formatter.format_response(
                 str(price_data),
-                ContentType.MARKET
+                FormatterContentType.MARKET
             ),
             "news": response_formatter.format_response(
                 str(news_data),
-                ContentType.NEWS
+                FormatterContentType.NEWS
             ),
             "sentiment": sentiment
         }
 
-        # 更新上下文
+        # Update context
         await context_manager.add_message(
             request.session_id,
             {"role": "user", "content": request.message}

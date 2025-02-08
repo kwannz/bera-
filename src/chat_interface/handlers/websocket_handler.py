@@ -3,9 +3,13 @@ import json
 import websockets
 from typing import Dict, Any
 from ..services.context_service import ContextManager
-from ..services.response_formatter import ResponseFormatter, ContentType
-from src.ai_response.model_manager import AIModelManager
+from ..services.response_formatter import ResponseFormatter
+from src.ai_response.model_manager import (
+    AIModelManager,
+    ContentType as ModelContentType
+)
 from src.ai_response.generator import ResponseGenerator
+from ..services.response_formatter import ContentType as FormatterContentType
 
 
 class WebSocketHandler:
@@ -40,7 +44,17 @@ class WebSocketHandler:
     ) -> Dict[str, Any]:
         """处理接收到的消息"""
         try:
-            # 并行获取数据
+            # Get context for AI response
+            context = await self.context_manager.get_context(session_id)
+
+            # Generate AI response
+            ai_response = await self.model_manager.generate_content(
+                ModelContentType.MARKET,
+                {"message": message, "context": context},
+                max_length=280
+            )
+
+            # Get additional data in parallel
             tasks = [
                 self._get_price_data(),
                 self._get_latest_news(),
@@ -48,20 +62,25 @@ class WebSocketHandler:
             ]
             price_data, news_data, sentiment = await asyncio.gather(*tasks)
 
-            # 格式化响应
+            # Format response
             response = {
+                "ai_response": ai_response,
                 "market_data": self.response_formatter.format_response(
                     json.dumps(price_data),
-                    ContentType.MARKET
+                    FormatterContentType.MARKET
                 ),
                 "news": self.response_formatter.format_response(
                     json.dumps(news_data),
-                    ContentType.NEWS
+                    FormatterContentType.NEWS
                 ),
                 "sentiment": sentiment
             }
 
-            # 更新上下文
+            # Update context
+            await self.context_manager.add_message(
+                session_id,
+                {"role": "user", "content": message}
+            )
             await self.context_manager.add_message(
                 session_id,
                 {"role": "assistant", "content": response}
