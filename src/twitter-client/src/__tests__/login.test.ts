@@ -16,24 +16,27 @@ describe('Twitter Login Tests', () => {
   });
 
   test('login with username/password', async () => {
-    await scraper.login(
-      process.env.tusername!,
-      process.env.tPassword!,
-      process.env.tEmail
-    );
-    const isLoggedIn = await scraper.isLoggedIn();
-    expect(isLoggedIn).toBe(true);
-  });
+    // Skip test if credentials are not available
+    if (!process.env.tusername || !process.env.tPassword || !process.env.tEmail) {
+      console.warn('Skipping test: Twitter credentials not available');
+      return;
+    }
 
-  test('login with username/password', async () => {
     try {
       await scraper.login(
-        process.env.TWITTER_USERNAME!,
-        process.env.TWITTER_PASSWORD!,
-        process.env.TWITTER_EMAIL
+        process.env.tusername,
+        process.env.tPassword,
+        process.env.tEmail
       );
+
+      // Verify login state
       const isLoggedIn = await scraper.isLoggedIn();
       expect(isLoggedIn).toBe(true);
+
+      // Verify user profile is accessible
+      const profile = await scraper.me();
+      expect(profile).toBeDefined();
+      expect(profile?.username).toBeDefined();
     } catch (error) {
       console.error('Login error:', error);
       throw error;
