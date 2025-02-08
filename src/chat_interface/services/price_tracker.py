@@ -28,15 +28,15 @@ class PriceTracker:
             "https://beratrail.io/api/v1"  # Default API URL
         )
         
-        # OKX API configuration
-        self.okx_api_key = os.getenv("OKX_API_KEY")
-        self.okx_secret_key = os.getenv("OKX_SECRET_KEY")
-        self.okx_url = "https://www.okx.com/api/v5"
+        # Rate limiting configuration
+        self.rate_limit = int(os.getenv("BERATRAIL_RATE_LIMIT", "100"))
+        self.rate_window = int(os.getenv("BERATRAIL_RATE_WINDOW", "60"))
         
         # Cache configuration
         self.cache_ttl = int(os.getenv("PRICE_CACHE_TTL", "300"))
         self.logger = get_logger(__name__)
         self._initialized = False
+        self._last_successful_price: Optional[Dict[str, Any]] = None
         
         # BeraTrail API can be used without API key in free tier
         if not self.api_url:
@@ -130,56 +130,91 @@ class PriceTracker:
     @async_retry(retries=3, delay=1.0, exceptions=(aiohttp.ClientError,))
     async def _fetch_price_data(self) -> Dict[str, Any]:
         """获取价格数据，使用重试装饰器和断路器"""
-        # Try BeraTrail API first
+        if not await self.rate_limiter.check_rate_limit(
+            "beratrail",
+            limit=self.rate_limit,
+            window=self.rate_window
+        ):
+            self.logger.warning(
+                "Rate limit exceeded for BeraTrail API",
+                extra={"category": DebugCategory.API.value}
+            )
+            # Return last successful price if available
+            if self._last_successful_price:
+                return self._last_successful_price
+            return {"error": "Rate limit exceeded"}
+
         try:
             data = await self._fetch_beratrail_price()
             if "error" not in data:
+                self._last_successful_price = data
                 return data
-        except Exception as e:
-            self.logger.warning(
-                f"BeraTrail API failed, falling back to CoinGecko: {str(e)}",
+            
+            self.logger.error(
+                f"BeraTrail API error: {data.get('error')}",
                 extra={"category": DebugCategory.API.value}
             )
-        
-        # Try CoinGecko as first fallback
-        try:
-            data = await self._fetch_coingecko_price()
-            if "error" not in data:
-                return data
+            # Return last successful price if available
+            if self._last_successful_price:
+                return self._last_successful_price
+            return data
         except Exception as e:
-            self.logger.warning(
-                f"CoinGecko API failed, falling back to OKX: {str(e)}",
+            self.logger.error(
+                f"BeraTrail API failed: {str(e)}",
                 extra={"category": DebugCategory.API.value}
             )
-        
-        # Try OKX as second fallback
-        return await self._fetch_okx_price()
+            # Return last successful price if available
+            if self._last_successful_price:
+                return self._last_successful_price
+            return {"error": str(e)}
 
     async def _fetch_beratrail_price(self) -> Dict[str, Any]:
         """从BeraTrail API获取价格数据"""
         url = f"{self.api_url}/tokens/bera/price"
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "BeraMonitor/1.0"
+        }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         self.metrics.start_request("beratrail")
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as response:
+                async with session.get(
+                    url,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as response:
+                    if response.status == 429:
+                        self.logger.warning(
+                            "BeraTrail API rate limit exceeded",
+                            extra={"category": DebugCategory.API.value}
+                        )
+                        return {"error": "Rate limit exceeded"}
+                        
                     if response.status == 200:
                         data = await response.json()
                         required_fields = ["price", "volume_24h", "price_change_24h"]
                         if all(k in data for k in required_fields):
-                            price_data = {
-                                "berachain": {
-                                    "usd": float(data["price"]),
-                                    "usd_24h_vol": float(data["volume_24h"]),
-                                    "usd_24h_change": float(data["price_change_24h"])
+                            try:
+                                price_data = {
+                                    "berachain": {
+                                        "usd": float(data["price"]),
+                                        "usd_24h_vol": float(data["volume_24h"]),
+                                        "usd_24h_change": float(data["price_change_24h"])
+                                    }
                                 }
-                            }
-                            await self._cache_price_data(price_data)
-                            self.metrics.end_request("beratrail")
-                            return price_data
+                                await self._cache_price_data(price_data)
+                                self.metrics.end_request("beratrail")
+                                return price_data
+                            except (ValueError, TypeError) as e:
+                                return await self._handle_api_error(
+                                    e,
+                                    "BeraTrail",
+                                    "Invalid numeric data in response"
+                                )
 
                         return await self._handle_api_error(
                             ValueError("Invalid response format"),
@@ -193,120 +228,37 @@ class PriceTracker:
                             "BeraTrail",
                             response_text
                         )
+        except aiohttp.ClientError as e:
+            self.logger.error(
+                f"BeraTrail API connection error: {str(e)}",
+                extra={
+                    "category": DebugCategory.API.value,
+                    "error_type": "connection"
+                }
+            )
+            return {"error": "Connection error"}
         except Exception as e:
             return await self._handle_api_error(e, "BeraTrail")
-
-    async def _fetch_coingecko_price(self) -> Dict[str, Any]:
-        """从CoinGecko API获取价格数据作为备用"""
-        url = "https://api.coingecko.com/api/v3/simple/price"
-        params = {
-            "ids": "berachain",
-            "vs_currencies": "usd",
-            "include_24hr_vol": "true",
-            "include_24hr_change": "true"
-        }
-        headers = {
-            "X-CG-API-KEY": os.getenv("COINGECKO_API_KEY")
-        }
-
-        self.metrics.start_request("coingecko")
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if "berachain" in data:
-                            bera_data = data["berachain"]
-                            price_data = {
-                                "berachain": {
-                                    "usd": float(bera_data["usd"]),
-                                    "usd_24h_vol": float(bera_data.get("usd_24h_vol", 0)),
-                                    "usd_24h_change": float(bera_data.get("usd_24h_change", 0))
-                                }
-                            }
-                            await self._cache_price_data(price_data)
-                            self.metrics.end_request("coingecko")
-                            return price_data
-
-                        return await self._handle_api_error(
-                            ValueError("Invalid response format"),
-                            "CoinGecko",
-                            str(data)
-                        )
-                    else:
-                        response_text = await response.text()
-                        return await self._handle_api_error(
-                            Exception(f"HTTP {response.status}"),
-                            "CoinGecko",
-                            response_text
-                        )
-        except Exception as e:
-            return await self._handle_api_error(e, "CoinGecko")
 
     async def _handle_api_error(
         self,
         error: Exception,
-        api_name: str,
         response_text: Optional[str] = None
     ) -> Dict[str, Any]:
-        """统一处理API错误"""
+        """统一处理BeraTrail API错误"""
         error_msg = str(error)
         if response_text:
             error_msg = f"{error_msg} - Response: {response_text}"
             
         self.logger.error(
-            f"{api_name} API error: {error_msg}",
+            f"BeraTrail API error: {error_msg}",
             extra={
                 "category": DebugCategory.API.value,
-                "api": api_name
+                "error_type": "api_error"
             }
         )
-        self.metrics.record_error(f"price_tracker_{api_name.lower()}")
+        self.metrics.record_error("price_tracker_beratrail")
         return {"error": error_msg}
-
-    async def _fetch_okx_price(self) -> Dict[str, Any]:
-        """从OKX API获取价格数据作为第二备用"""
-        url = f"{self.okx_url}/market/ticker"
-        params = {"instId": "BERA-USDT"}
-        headers = {
-            "OK-ACCESS-KEY": self.okx_api_key,
-            "OK-ACCESS-SIGN": self.okx_secret_key,
-            "Content-Type": "application/json"
-        }
-
-        self.metrics.start_request("okx")
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if data.get("data") and len(data["data"]) > 0:
-                            ticker = data["data"][0]
-                            price_data = {
-                                "berachain": {
-                                    "usd": float(ticker["last"]),
-                                    "usd_24h_vol": float(ticker["vol24h"]),
-                                    "usd_24h_change": float(ticker.get("volCcy24h", 0))
-                                }
-                            }
-                            await self._cache_price_data(price_data)
-                            self.metrics.end_request("okx")
-                            return price_data
-
-                        return await self._handle_api_error(
-                            ValueError("Invalid response format"),
-                            "OKX",
-                            str(data)
-                        )
-                    else:
-                        response_text = await response.text()
-                        return await self._handle_api_error(
-                            Exception(f"HTTP {response.status}"),
-                            "OKX",
-                            response_text
-                        )
-        except Exception as e:
-            return await self._handle_api_error(e, "OKX")
 
     async def _cache_price_data(self, price_data: Dict[str, Any]) -> None:
         """缓存价格数据到Redis"""
