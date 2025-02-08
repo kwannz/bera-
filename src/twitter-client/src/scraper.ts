@@ -773,7 +773,8 @@ export class Scraper {
       this.authTrends = userAuth;
     } catch (error) {
       this.useGuestAuth();
-      throw new Error(`Authentication failed: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Authentication failed: ${errorMessage}`);
     }
   }
 
@@ -821,7 +822,8 @@ export class Scraper {
       this.authTrends = userAuth;
     } catch (error) {
       this.useGuestAuth();
-      throw new Error(`Failed to set cookies: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to set cookies: ${errorMessage}`);
     }
   }
 
