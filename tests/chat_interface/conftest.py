@@ -26,14 +26,13 @@ def event_loop():
 
 
 @pytest.fixture(scope="function")
-async def redis_client() -> AsyncGenerator[redis.asyncio.Redis, None]:
+async def redis_client() -> redis.asyncio.Redis:
     """Create a Redis client for testing"""
     # Set test environment variables
     os.environ["BERATRAIL_API_KEY"] = "test_key"
     os.environ["OLLAMA_API_URL"] = "http://localhost:11434"
     os.environ["DEEPSEEK_API_KEY"] = "test_key"
 
-    client = None
     try:
         client = await redis.asyncio.Redis.from_url(
             "redis://localhost:6379/0",
@@ -52,18 +51,12 @@ async def redis_client() -> AsyncGenerator[redis.asyncio.Redis, None]:
         except asyncio.TimeoutError as e:
             raise RuntimeError(f"Redis operation timed out: {str(e)}")
 
-        yield client
+        return client
 
     except redis.RedisError as e:
         raise RuntimeError(f"Redis initialization failed: {str(e)}")
     except Exception as e:
         raise RuntimeError(f"Unexpected error during Redis setup: {str(e)}")
-    finally:
-        if client:
-            try:
-                await asyncio.wait_for(client.aclose(), timeout=5.0)
-            except Exception as e:
-                print(f"Warning: Error during Redis cleanup: {str(e)}")
 
 
 @pytest.fixture(scope="function")
@@ -71,8 +64,11 @@ async def rate_limiter(
     redis_client: redis.asyncio.Redis
 ) -> RateLimiter:
     """Create a rate limiter instance for testing"""
-    limiter = RateLimiter(redis_client)
     try:
+        # Initialize redis client first
+        redis = await redis_client
+        # Create and initialize rate limiter
+        limiter = RateLimiter(redis)
         await asyncio.wait_for(limiter.initialize(), timeout=5.0)
         return limiter
     except asyncio.TimeoutError as e:
@@ -86,8 +82,10 @@ async def context_manager(
     redis_client: redis.asyncio.Redis
 ) -> ContextManager:
     """Create a context manager instance for testing"""
-    manager = ContextManager(redis_client)
     try:
+        # Initialize redis client first
+        redis = await redis_client
+        manager = ContextManager(redis)
         await asyncio.wait_for(manager.initialize(), timeout=5.0)
         return manager
     except asyncio.TimeoutError as e:
@@ -150,6 +148,13 @@ async def chat_handler(
     async def mock_generate_content(*args, **kwargs):
         return "AI generated response for testing"
 
+    # Initialize redis client first
+    redis = await redis_client
+
+    # Initialize rate_limiter with redis client
+    limiter = RateLimiter(redis)
+    await limiter.initialize()
+
     # Initialize model manager with mock
     model_manager = AIModelManager()
     await model_manager.initialize()
@@ -159,7 +164,7 @@ async def chat_handler(
 
     # Initialize services with dependencies and mocks
     price_tracker = PriceTracker(
-        rate_limiter=rate_limiter,
+        rate_limiter=limiter,
         metrics=metrics,
         circuit_breaker=circuit_breaker
     )
@@ -167,7 +172,7 @@ async def chat_handler(
     monkeypatch.setattr(price_tracker, "get_price_data", mock_get_price_data)
 
     news_monitor = NewsMonitor(
-        rate_limiter=rate_limiter,
+        rate_limiter=limiter,
         metrics=metrics,
         circuit_breaker=circuit_breaker
     )
@@ -175,7 +180,7 @@ async def chat_handler(
     monkeypatch.setattr(news_monitor, "get_latest_news", mock_get_latest_news)
 
     analytics_collector = AnalyticsCollector(
-        rate_limiter=rate_limiter,
+        rate_limiter=limiter,
         metrics=metrics,
         circuit_breaker=circuit_breaker
     )
