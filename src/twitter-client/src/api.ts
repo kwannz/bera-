@@ -54,13 +54,13 @@ export async function requestApi<T>(
   body?: any,
 ): Promise<RequestApiResult<T>> {
   const headers = new Headers();
-  await auth.installTo(headers, url);
+  await auth.installTo(headers);
   await platform.randomizeCiphers();
 
   let res: Response;
   do {
     try {
-      res = await auth.fetch(url, {
+      res = await (auth.fetch ?? globalThis.fetch)(url, {
         method,
         headers,
         credentials: 'include',

@@ -11,6 +11,7 @@ export interface TwitterAuthOptions {
 }
 
 export interface TwitterAuth {
+  readonly fetch: typeof fetch;
   cookieJar(): CookieJar;
   isLoggedIn(): Promise<boolean>;
   me?(): Promise<Profile | undefined>;
@@ -36,7 +37,6 @@ export interface TwitterAuth {
     accessToken: string,
     accessSecret: string,
   ): void;
-  fetch?: typeof fetch;
 }
 
 /**
@@ -68,14 +68,13 @@ export class TwitterGuestAuth implements TwitterAuth {
   protected guestToken?: string;
   protected guestCreatedAt?: Date;
   protected v2Client: TwitterApi | null;
-
-  fetch: typeof fetch;
+  public readonly fetch: typeof fetch;
 
   constructor(
     bearerToken: string,
     protected readonly options?: Partial<TwitterAuthOptions>,
   ) {
-    this.fetch = withTransform(options?.fetch ?? fetch, options?.transform);
+    this.fetch = withTransform(options?.fetch ?? globalThis.fetch, options?.transform);
     this.bearerToken = bearerToken;
     this.jar = new CookieJar();
     this.v2Client = null;
