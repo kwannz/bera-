@@ -105,22 +105,55 @@ export class TwitterUserAuth extends TwitterGuestAuth {
     appKey?: string,
     appSecret?: string,
     accessToken?: string,
-    accessSecret?: string,
-    retryCount: number = 0
+    accessSecret?: string
   ): Promise<void> {
     if (!username || !password || !email) {
-      throw new Error('TWITTER_USERNAME, TWITTER_PASSWORD, and TWITTER_EMAIL must be defined');
+      throw new Error('Twitter credentials not available');
     }
 
     try {
-      await this.updateGuestToken();
-    } catch (error) {
-      if (retryCount < 3) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-        return this.login(username, password, email, twoFactorSecret, appKey, appSecret, accessToken, accessSecret, retryCount + 1);
+      await super.login();
+      let next = await this.initLogin();
+      
+      // Handle JS instrumentation
+      next = await this.handleJsInstrumentationSubtask(next);
+      
+      // Enter username/email
+      next = await this.handleEnterUserIdentifierSSO({
+        ...next,
+        subtask_inputs: {
+          ...next.subtask_inputs,
+          text_input: username,
+          link: "next_link"
+        }
+      });
+
+      // Enter password
+      next = await this.handleEnterPassword({
+        ...next,
+        subtask_inputs: {
+          ...next.subtask_inputs,
+          text_input: password,
+          link: "next_link"
+        }
+      });
+
+      // Handle any account checks
+      if (next.subtask_id === 'AccountDuplicationCheck') {
+        next = await this.handleAccountDuplicationCheck(next);
       }
-      throw error;
-    }
+
+      // Handle 2FA if needed
+      if (next.subtask_id === 'LoginTwoFactorAuthChallenge' && twoFactorSecret) {
+        next = await this.handleTwoFactorAuthChallenge(next, twoFactorSecret);
+      }
+
+      // Handle success
+      if (next.subtask_id === 'LoginSuccessSubtask') {
+        await this.handleSuccessSubtask(next);
+      } else {
+        throw new Error(`Unexpected subtask: ${next.subtask_id}`);
+      }
 
     let next = await this.initLogin();
     while ('subtask' in next && next.subtask) {
