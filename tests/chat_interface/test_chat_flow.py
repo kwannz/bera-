@@ -120,8 +120,14 @@ async def test_error_handling():
         'src.chat_interface.services.price_tracker'
         '.PriceTracker.get_price_data'
     )
-    with patch(price_patch) as mock_price:
+    rate_limit_patch = (
+        'src.chat_interface.utils.rate_limiter'
+        '.RateLimiter.check_rate_limit'
+    )
+    with patch(price_patch) as mock_price, \
+         patch(rate_limit_patch) as mock_rate_limit:
         mock_price.side_effect = Exception("Test error")
+        mock_rate_limit.return_value = True  # Allow request to pass rate limit
 
         response = client.post(
             "/api/chat",
