@@ -8,6 +8,7 @@ class DebugCategory(Enum):
     CACHE = "cache"
     CONFIG = "config"
     VALIDATION = "validation"
+    SCRAPING = "scraping"
 
 
 def get_logger(name: str) -> logging.Logger:

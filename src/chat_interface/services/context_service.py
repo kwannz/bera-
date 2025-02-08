@@ -1,16 +1,37 @@
-import redis
-from typing import List, Dict
+import redis.asyncio
+from typing import List, Dict, Optional
 import json
+from redis.asyncio.client import Redis
 
 
 class ContextManager:
-    def __init__(self):
-        self.redis_client = redis.Redis(
-            host='localhost',
-            port=6379,
-            db=0
-        )
+    def __init__(
+        self,
+        redis_client: Optional[Redis] = None
+    ):
+        self._redis_client = redis_client
         self.max_context_rounds = 5
+
+    @property
+    def redis_client(self) -> Redis:
+        """Get the Redis client instance"""
+        if not self._redis_client:
+            raise RuntimeError("Redis client not initialized")
+        return self._redis_client
+
+    async def initialize(self) -> None:
+        """Initialize the context manager"""
+        if not self._redis_client:
+            self._redis_client = await redis.asyncio.Redis.from_url(
+                "redis://localhost:6379/0",
+                decode_responses=False
+            )
+            if not self._redis_client:
+                raise RuntimeError("Failed to initialize Redis client")
+            # Verify Redis connection
+            await self._redis_client.ping()
+            # Clear any existing context data
+            await self._redis_client.delete("chat:context:*")
 
     def _compress_context(self, context: List[Dict]) -> List[Dict]:
         """压缩对话上下文，保留关键信息
@@ -38,10 +59,13 @@ class ContextManager:
     async def get_context(self, session_id: str) -> List[Dict]:
         """获取压缩后的对话上下文"""
         context_key = f"chat:context:{session_id}"
-        raw_context = self.redis_client.get(context_key)
+        raw_context = await self.redis_client.get(context_key)
         if raw_context:
-            context = json.loads(raw_context)
-            return self._compress_context(context)
+            try:
+                context = json.loads(raw_context)
+                return self._compress_context(context)
+            except json.JSONDecodeError:
+                await self.redis_client.delete(context_key)
         return []
 
     async def add_message(self, session_id: str, message: Dict):
@@ -54,7 +78,7 @@ class ContextManager:
         if len(context) > self.max_context_rounds * 2:
             context = context[-self.max_context_rounds * 2:]
 
-        self.redis_client.setex(
+        await self.redis_client.setex(
             context_key,
             3600,  # 1小时过期
             json.dumps(context)

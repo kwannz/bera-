@@ -21,18 +21,34 @@ class PriceTracker:
         self.circuit_breaker = circuit_breaker
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.api_key = os.getenv("BERATRAIL_API_KEY")
-        self.cache_ttl = int(os.getenv("PRICE_CACHE_TTL", "300"))  # 5 minutes default
+        # 5 minutes default
+        self.cache_ttl = int(os.getenv("PRICE_CACHE_TTL", "300"))
         self.api_url = os.getenv(
             "BERATRAIL_API_URL",
             "https://api.beratrail.io/v1"
         )
         self.logger = get_logger(__name__)
-        
+        self._initialized = False
         if not self.api_key:
             self.logger.error(
-                "Missing required environment variable: BERATRAIL_API_KEY",
+                "Missing required environment variable: "
+                "BERATRAIL_API_KEY",
                 extra={"category": DebugCategory.CONFIG.value}
             )
+
+    async def initialize(self) -> None:
+        """Initialize the price tracker service"""
+        if self._initialized:
+            return
+        # Clear any existing cache
+        try:
+            await self.rate_limiter.redis_client.delete("bera_price")
+        except Exception as e:
+            self.logger.error(
+                f"Failed to clear cache during initialization: {str(e)}",
+                extra={"category": DebugCategory.CACHE.value}
+            )
+        self._initialized = True
 
     async def get_price_data(self) -> Dict[str, Any]:
         """获取BERA代币价格数据"""
@@ -68,7 +84,9 @@ class PriceTracker:
     async def get_cached_price(self) -> Optional[Dict[str, Any]]:
         """获取缓存的价格数据"""
         try:
-            cached_data = await self.rate_limiter.redis_client.get("bera_price")
+            cached_data = await self.rate_limiter.redis_client.get(
+                "bera_price"
+            )
             if not cached_data:
                 return None
 
@@ -111,7 +129,10 @@ class PriceTracker:
                 async with session.get(url, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if all(k in data for k in ["price", "volume_24h", "price_change_24h"]):
+                        required_fields = [
+                            "price", "volume_24h", "price_change_24h"
+                        ]
+                        if all(k in data for k in required_fields):
                             # Transform to match expected format
                             price_data = {
                                 "berachain": {
@@ -129,8 +150,11 @@ class PriceTracker:
                                 )
                             except Exception as e:
                                 self.logger.error(
-                                    f"Failed to cache price data: {str(e)}",
-                                    extra={"category": DebugCategory.CACHE.value}
+                                    "Failed to cache price data: "
+                                    f"{str(e)}",
+                                    extra={
+                                        "category": DebugCategory.CACHE.value
+                                    }
                                 )
                             self.cache["last_price"] = price_data
                             self.metrics.end_request("price_tracker")

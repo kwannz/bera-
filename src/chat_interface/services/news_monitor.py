@@ -3,8 +3,8 @@ import json
 import aiohttp
 import hashlib
 from datetime import datetime
-from bs4 import BeautifulSoup
-from typing import List, Dict, Any, Optional, Set
+from bs4 import BeautifulSoup, Tag
+from typing import List, Dict, Any, Optional, Set, cast
 from ..utils.logging_config import get_logger, DebugCategory
 from ..utils.rate_limiter import RateLimiter
 from ..utils.retry import async_retry
@@ -23,7 +23,24 @@ class NewsMonitor:
         self.metrics = metrics
         self.circuit_breaker = circuit_breaker
         self.logger = get_logger(__name__)
-        self.cache_ttl = int(os.getenv("NEWS_CACHE_TTL", "86400"))  # 24 hours default
+        self._initialized = False
+
+    async def initialize(self) -> None:
+        """Initialize the news monitor service"""
+        if self._initialized:
+            return
+
+        # Initialize Redis indices for articles
+        try:
+            await self.rate_limiter.redis_client.delete("bera_articles:index")
+        except Exception as e:
+            self.logger.error(
+                f"Failed to clear indices during initialization: {str(e)}",
+                extra={"category": DebugCategory.CACHE.value}
+            )
+        self._initialized = True
+        # 24 hours default
+        self.cache_ttl = int(os.getenv("NEWS_CACHE_TTL", "86400"))
         self.substack_url = os.getenv(
             "BERAHOME_SUBSTACK_URL",
             "https://berahome.substack.com"
@@ -45,7 +62,7 @@ class NewsMonitor:
                 return cached_articles
 
             # Fetch and process articles
-            articles = await self.circuit_breaker.call(
+            articles: List[Dict[str, Any]] = await self.circuit_breaker.call(
                 self._fetch_and_process_articles
             )
 
@@ -70,14 +87,34 @@ class NewsMonitor:
         """从Redis获取缓存的文章数据"""
         try:
             # Get article IDs from index
-            article_ids = await self.rate_limiter.redis_client.smembers("bera_articles:index")
+            key = "bera_articles:index"
+            # Get members from Redis set
+            try:
+                redis_client = self.rate_limiter.redis_client
+                # Get members from Redis set
+                members = await redis_client.smembers(  # type: ignore[misc]
+                    key
+                )
+                article_ids = {
+                    member.decode('utf-8')
+                    for member in members
+                    if isinstance(member, bytes)
+                }
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to get members from Redis: {str(e)}",
+                    extra={"category": DebugCategory.CACHE.value}
+                )
+                article_ids = set()
             if not article_ids:
                 return None
 
             # Get articles from cache
-            articles = []
+            articles: List[Dict[str, Any]] = []
             for article_id in article_ids:
-                article_data = await self.rate_limiter.redis_client.get(f"bera_articles:{article_id}")
+                article_data = await self.rate_limiter.redis_client.get(
+                    f"bera_articles:{article_id}"
+                )
                 if article_data:
                     try:
                         article = json.loads(article_data)
@@ -85,7 +122,8 @@ class NewsMonitor:
                             articles.append(article)
                     except json.JSONDecodeError:
                         self.logger.error(
-                            f"Failed to parse article data for ID: {article_id}",
+                            "Failed to parse article data for ID: "
+                            f"{article_id}",
                             extra={"category": DebugCategory.CACHE.value}
                         )
                         continue
@@ -127,7 +165,8 @@ class NewsMonitor:
                 async with session.get(self.substack_url) as response:
                     if response.status != 200:
                         self.logger.error(
-                            f"Failed to fetch BeraHome main page: {response.status}",
+                            "Failed to fetch BeraHome main page: "
+                            f"{response.status}",
                             extra={"category": DebugCategory.SCRAPING.value}
                         )
                         self.metrics.record_error("news_monitor")
@@ -135,18 +174,20 @@ class NewsMonitor:
 
                     html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
-                    article_links = self._extract_article_links(soup)
+                    article_links = list(self._extract_article_links(soup))
 
                     # Fetch and process articles
-                    articles = []
-                    for url in article_links[:10]:  # Process latest 10 articles
+                    articles: List[Dict[str, Any]] = []
+                    # Process latest 10 articles
+                    for url in article_links[:10]:
                         try:
                             article = await self._fetch_article(session, url)
                             if article:
                                 articles.append(article)
                         except Exception as e:
                             self.logger.error(
-                                f"Error processing article {url}: {str(e)}",
+                                "Error processing article: "
+                                f"{url}: {str(e)}",
                                 extra={
                                     "category": DebugCategory.SCRAPING.value,
                                     "url": url
@@ -173,17 +214,27 @@ class NewsMonitor:
         links = set()
         for a in soup.find_all('a', href=True):
             href = a['href']
-            if '/p/' in href and href.startswith(('http://berahome.substack.com', 'https://berahome.substack.com')):
+            base_urls = (
+                'http://berahome.substack.com',
+                'https://berahome.substack.com'
+            )
+            if ('/p/' in href and
+                    any(href.startswith(url) for url in base_urls)):
                 links.add(href)
         return links
 
-    async def _fetch_article(self, session: aiohttp.ClientSession, url: str) -> Optional[Dict[str, Any]]:
+    async def _fetch_article(
+        self,
+        session: aiohttp.ClientSession,
+        url: str
+    ) -> Optional[Dict[str, Any]]:
         """获取并解析单篇文章"""
         try:
             async with session.get(url) as response:
                 if response.status != 200:
                     self.logger.error(
-                        f"Failed to fetch article {url}: {response.status}",
+                        "Failed to fetch article: "
+                        f"{url}: {response.status}",
                         extra={"category": DebugCategory.SCRAPING.value}
                     )
                     return None
@@ -192,14 +243,29 @@ class NewsMonitor:
                 soup = BeautifulSoup(html, 'html.parser')
 
                 # Extract article data
-                title = soup.find('h1').get_text().strip() if soup.find('h1') else None
-                content = soup.find('article').get_text().strip() if soup.find('article') else None
-                date_elem = soup.find('time')
-                date = date_elem.get('datetime') if date_elem else None
+                h1_elem = cast(Optional[Tag], soup.find('h1'))
+                title = (
+                    h1_elem.get_text().strip()
+                    if h1_elem and isinstance(h1_elem, Tag)
+                    else None
+                )
+                article_elem = cast(Optional[Tag], soup.find('article'))
+                content = (
+                    article_elem.get_text().strip()
+                    if article_elem and isinstance(article_elem, Tag)
+                    else None
+                )
+                date_elem = cast(Optional[Tag], soup.find('time'))
+                date = (
+                    date_elem.get('datetime')
+                    if date_elem and isinstance(date_elem, Tag)
+                    else None
+                )
 
                 if not all([title, content, date]):
                     self.logger.warning(
-                        f"Missing required fields for article {url}",
+                        "Missing required fields for article: "
+                        f"{url}",
                         extra={"category": DebugCategory.SCRAPING.value}
                     )
                     return None
@@ -212,7 +278,10 @@ class NewsMonitor:
                     "id": article_id,
                     "title": title,
                     "content": content,
-                    "summary": content[:200] + "..." if len(content) > 200 else content,
+                    "summary": (
+                        content[:200] + "..." if content and len(content) > 200
+                        else content or ""
+                    ),
                     "date": date,
                     "url": url
                 }
@@ -229,7 +298,10 @@ class NewsMonitor:
             )
             return None
 
-    async def _update_cache_and_index(self, articles: List[Dict[str, Any]]) -> None:
+    async def _update_cache_and_index(
+        self,
+        articles: List[Dict[str, Any]]
+    ) -> None:
         """更新Redis缓存和索引"""
         try:
             pipeline = self.rate_limiter.redis_client.pipeline()
@@ -255,11 +327,16 @@ class NewsMonitor:
                 # Update keyword index (simple word-based)
                 keywords = set(
                     word.lower()
-                    for word in f"{article['title']} {article['summary']}".split()
+                    for word in (
+                        f"{article['title']} {article['summary']}"
+                    ).split()
                     if len(word) > 3
                 )
                 for keyword in keywords:
-                    pipeline.sadd(f"bera_articles:keywords:{keyword}", article_id)
+                    pipeline.sadd(
+                        f"bera_articles:keywords:{keyword}",
+                        article_id
+                    )
 
             # Update main index
             pipeline.delete("bera_articles:index")

@@ -1,10 +1,22 @@
 import os
 import json
+import logging
 import aiohttp
+from aiohttp import ClientTimeout
 import asyncio
 from typing import Optional, Dict, List
 from enum import Enum
-from ..utils.logging_config import get_logger, DebugCategory
+
+# Configure logging directly
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+# Define debug categories
+class DebugCategory(Enum):
+    API = "api"
+    CACHE = "cache"
+    VALIDATION = "validation"
+    CONFIG = "config"
 
 MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
@@ -114,12 +126,25 @@ class AIModelManager:
         self,
         ollama_url: Optional[str] = None
     ):
-        self.logger = get_logger(__name__)
+        self.logger = logger  # Use the module-level logger
         self.model_type = ModelType.OLLAMA
         self.ollama_url = ollama_url or os.getenv(
             "OLLAMA_URL",
             "http://localhost:11434"
         )
+        self._initialized = False
+
+    async def initialize(self) -> None:
+        """Initialize the AI model manager"""
+        if self._initialized:
+            return
+        # Verify Ollama API URL is available
+        if not self.ollama_url:
+            self.logger.warning(
+                "OLLAMA_URL not set, using default",
+                extra={"category": DebugCategory.VALIDATION.value}
+            )
+        self._initialized = True
         
     async def generate_content(
         self,
@@ -199,7 +224,7 @@ class AIModelManager:
                 async with session.post(
                     f"{self.ollama_url}/api/chat",
                     json=payload,
-                    timeout=10.0  # 10 second timeout
+                    timeout=ClientTimeout(total=10.0)  # 10 second timeout
                 ) as response:
                     if response.status == 200:
                         try:
