@@ -5,11 +5,15 @@ import asyncio
 
 from ..services.context_service import ContextManager
 from ..services.response_formatter import ResponseFormatter, ContentType
+from src.ai_response.model_manager import AIModelManager
+from src.ai_response.generator import ResponseGenerator
 
 
 app = FastAPI()
 context_manager = ContextManager()
 response_formatter = ResponseFormatter()
+model_manager = AIModelManager()
+response_generator = ResponseGenerator()
 
 
 class ChatRequest(BaseModel):

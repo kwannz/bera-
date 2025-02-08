@@ -6,6 +6,8 @@ from .services.price_tracker import PriceTracker
 from .services.news_monitor import NewsMonitor
 from .services.analytics_collector import AnalyticsCollector
 from .utils.rate_limiter import RateLimiter
+from src.ai_response.model_manager import AIModelManager
+from src.ai_response.generator import ResponseGenerator
 
 __all__ = [
     'app',
@@ -16,5 +18,7 @@ __all__ = [
     'PriceTracker',
     'NewsMonitor',
     'AnalyticsCollector',
-    'RateLimiter'
+    'RateLimiter',
+    'AIModelManager',
+    'ResponseGenerator'
 ]

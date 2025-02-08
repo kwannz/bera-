@@ -4,12 +4,16 @@ import websockets
 from typing import Dict, Any
 from ..services.context_service import ContextManager
 from ..services.response_formatter import ResponseFormatter, ContentType
+from src.ai_response.model_manager import AIModelManager
+from src.ai_response.generator import ResponseGenerator
 
 
 class WebSocketHandler:
     def __init__(self):
         self.context_manager = ContextManager()
         self.response_formatter = ResponseFormatter()
+        self.model_manager = AIModelManager()
+        self.response_generator = ResponseGenerator()
 
     async def handle_connection(self, websocket):
         session_id = None
