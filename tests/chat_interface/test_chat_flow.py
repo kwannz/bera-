@@ -30,8 +30,8 @@ async def test_full_chat_flow():
     )
 
     price_patch = (
-        'src.chat_interface.services.price_tracker'
-        '.PriceTracker.get_price_data'
+        'src.chat_interface.handlers.api_handler'
+        '._get_price_data'
     )
     news_patch = (
         'src.chat_interface.services.news_monitor'
@@ -117,8 +117,8 @@ async def test_rate_limit_handling():
 async def test_error_handling():
     """Test error handling in chat flow"""
     price_patch = (
-        'src.chat_interface.services.price_tracker'
-        '.PriceTracker.get_price_data'
+        'src.chat_interface.handlers.api_handler'
+        '._get_price_data'
     )
     rate_limit_patch = (
         'src.chat_interface.utils.rate_limiter'
