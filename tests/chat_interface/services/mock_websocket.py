@@ -147,8 +147,9 @@ class MockWebSocket:
                 # If queue is empty, return error immediately
                 return json.dumps({"e": "error", "m": "No messages available"})
             
-            if not (self.connected and self._running and 
-                       self._initialized):
+            if not (
+                self.connected and self._running and self._initialized
+            ):
                 raise websockets.exceptions.ConnectionClosed(None, None)
             
             # Parse message and update timestamp
@@ -157,8 +158,9 @@ class MockWebSocket:
                 data["E"] = int(time.time() * 1000)
                 
                 # Only queue another message if we're still connected
-                if (self.connected and self._running and 
-                    self._initialized):
+                if (
+                    self.connected and self._running and self._initialized
+                ):
                     try:
                         self.message_queue.put_nowait(json.dumps(data))
                     except asyncio.QueueFull:
@@ -189,7 +191,9 @@ class MockWebSocket:
                     continue
 
                 for subscription in list(self.subscriptions):
-                    if not (self.connected and self._running and self._initialized):
+                    if not (
+                        self.connected and self._running and self._initialized
+                    ):
                         return
 
                     symbol = subscription.split("@")[0].upper()
@@ -205,7 +209,9 @@ class MockWebSocket:
                         continue
 
                     # Send one price update immediately
-                    if not (self.connected and self._running and self._initialized):
+                    if not (
+                        self.connected and self._running and self._initialized
+                    ):
                         return
 
                     data = {
