@@ -20,13 +20,21 @@ class PriceTracker:
         self.metrics = metrics
         self.circuit_breaker = circuit_breaker
         self.cache: Dict[str, Dict[str, Any]] = {}
+        
+        # BeraTrail API configuration
         self.api_key = os.getenv("BERATRAIL_API_KEY")
-        # 5 minutes default
-        self.cache_ttl = int(os.getenv("PRICE_CACHE_TTL", "300"))
         self.api_url = os.getenv(
             "BERATRAIL_API_URL",
             "https://api.beratrail.io/v1"  # Default API URL
         )
+        
+        # OKX API configuration
+        self.okx_api_key = os.getenv("OKX_API_KEY")
+        self.okx_secret_key = os.getenv("OKX_SECRET_KEY")
+        self.okx_url = "https://www.okx.com/api/v5"
+        
+        # Cache configuration
+        self.cache_ttl = int(os.getenv("PRICE_CACHE_TTL", "300"))
         self.logger = get_logger(__name__)
         self._initialized = False
         
@@ -136,8 +144,19 @@ class PriceTracker:
                 extra={"category": DebugCategory.API.value}
             )
         
-        # Fallback to CoinGecko
-        return await self._fetch_coingecko_price()
+        # Try CoinGecko as first fallback
+        try:
+            data = await self._fetch_coingecko_price()
+            if "error" not in data:
+                return data
+        except Exception as e:
+            self.logger.warning(
+                f"CoinGecko API failed, falling back to OKX: {str(e)}",
+                extra={"category": DebugCategory.API.value}
+            )
+        
+        # Try OKX as second fallback
+        return await self._fetch_okx_price()
 
     async def _fetch_beratrail_price(self) -> Dict[str, Any]:
         """从BeraTrail API获取价格数据"""
@@ -250,6 +269,62 @@ class PriceTracker:
                 extra={"category": DebugCategory.API.value}
             )
             self.metrics.record_error("coingecko")
+            return {"error": str(e)}
+
+    async def _fetch_okx_price(self) -> Dict[str, Any]:
+        """从OKX API获取价格数据作为第二备用"""
+        url = f"{self.okx_url}/market/ticker"
+        params = {"instId": "BERA-USDT"}
+        headers = {
+            "OK-ACCESS-KEY": self.okx_api_key,
+            "OK-ACCESS-SIGN": self.okx_secret_key,
+            "Content-Type": "application/json"
+        }
+
+        self.metrics.start_request("okx")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get("data") and len(data["data"]) > 0:
+                            ticker = data["data"][0]
+                            price_data = {
+                                "berachain": {
+                                    "usd": float(ticker["last"]),
+                                    "usd_24h_vol": float(ticker["vol24h"]),
+                                    "usd_24h_change": float(ticker.get("volCcy24h", 0))
+                                }
+                            }
+                            await self._cache_price_data(price_data)
+                            self.metrics.end_request("okx")
+                            return price_data
+
+                        self.logger.error(
+                            "Invalid response format from OKX API",
+                            extra={
+                                "category": DebugCategory.API.value,
+                                "response": str(data)
+                            }
+                        )
+                        self.metrics.record_error("okx")
+                        return {"error": "Invalid response format"}
+                    else:
+                        self.logger.error(
+                            f"OKX API error: HTTP {response.status}",
+                            extra={
+                                "category": DebugCategory.API.value,
+                                "response": await response.text()
+                            }
+                        )
+                        self.metrics.record_error("okx")
+                        return {"error": f"HTTP {response.status}"}
+        except Exception as e:
+            self.logger.error(
+                f"OKX API error: {str(e)}",
+                extra={"category": DebugCategory.API.value}
+            )
+            self.metrics.record_error("okx")
             return {"error": str(e)}
 
     async def _cache_price_data(self, price_data: Dict[str, Any]) -> None:
