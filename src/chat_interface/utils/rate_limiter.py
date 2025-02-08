@@ -11,6 +11,23 @@ class RateLimiter:
         redis_client: Optional[Redis] = None
     ):
         self._redis_client = redis_client
+        # Default rate limits for different APIs
+        self.limits = {
+            "beratrail": 60,  # requests per minute
+            "coingecko": 50,  # requests per minute
+            "okx": 20,  # requests per second
+            "news_monitor": 30,  # requests per minute
+            "analytics": 20  # requests per minute
+        }
+        # Time windows in seconds
+        self.windows = {
+            "beratrail": 60,  # seconds
+            "coingecko": 60,  # seconds
+            "okx": 1,  # second
+            "news_monitor": 60,  # seconds
+            "analytics": 60  # seconds
+        }
+        # Default values for unknown services
         self.default_limit = 60  # requests per minute
         self.default_window = 60  # window in seconds
 
@@ -56,8 +73,9 @@ class RateLimiter:
         """检查是否超出速率限制"""
         try:
             current = int(time.time())
-            limit = limit or self.default_limit
-            window = window or self.default_window
+            # Use API-specific limits if available, otherwise use provided or default values
+            limit = limit or self.limits.get(key, self.default_limit)
+            window = window or self.windows.get(key, self.default_window)
 
             key = f"rate_limit:{key}"
 
