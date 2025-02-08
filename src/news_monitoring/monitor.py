@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup, Tag as BeautifulSoupTag
 from datetime import datetime
 from typing import List, Dict, Optional
 
-from ..twitter_bot.bot import NEWS_UPDATE_TEMPLATE
+from ..utils.templates import NEWS_UPDATE_TEMPLATE, BEAR_EMOJI
 
 logging.basicConfig(
     level=logging.INFO,

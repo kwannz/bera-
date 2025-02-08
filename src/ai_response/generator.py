@@ -1,8 +1,13 @@
-import openai
 import aiohttp
 import logging
 from typing import Optional, Dict, Any
 import json
+from enum import Enum
+
+class ContentType(Enum):
+    REPLY = "reply"
+    MARKET = "market"
+    NEWS = "news"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,63 +43,49 @@ Response Guidelines:
 5. Make technical concepts accessible to all users"""
 
 class ResponseGenerator:
-    def __init__(self, model: str = "deepseek-r1:1.5b", deepseek_api_key: Optional[str] = None):
-        self.model = model
-        self.openai_client = openai.Client()
-        self.deepseek_api_key = deepseek_api_key
-        self.deepseek_api_url = "https://api.deepseek.com/v3/chat/completions"
+    def __init__(self, ollama_url: str = "http://localhost:11434"):
+        self.ollama_url = ollama_url
+        self.logger = logging.getLogger(__name__)
         
-    async def generate_response(self, query: str) -> str:
+    async def generate_response(self, content_type: ContentType, context: Optional[Dict] = None) -> str:
+        """Generate response using Ollama"""
         try:
-            if self.model == "deepseek-r1:1.5b":
-                return await self._generate_deepseek_response(query)
-            else:
-                return await self._generate_openai_response(query)
+            return await self._generate_deepseek_response(content_type, context)
         except Exception as e:
-            logger.error(f"Error generating response: {str(e)}")
-            return "I apologize, but I'm having trouble processing your request at the moment. Please try again later."
+            self.logger.error(f"Error generating response: {str(e)}")
+            return ""
             
-    async def _generate_openai_response(self, query: str) -> str:
+    async def _generate_deepseek_response(self, content_type: ContentType, context: Optional[Dict] = None) -> str:
+        """Generate response using Ollama with deepseek-r1:1.5b model"""
         try:
-            response = await self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": query}
-                ],
-                max_tokens=150,
-                temperature=0.7
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            logger.error(f"OpenAI API error: {str(e)}")
-            raise
-            
-    async def _generate_deepseek_response(self, query: str) -> str:
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.deepseek_api_key}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": "deepseek-r1:1.5b",
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": query}
-                ],
-                "max_tokens": 150,
-                "temperature": 0.7
-            }
-            
+            prompt = self._get_prompt_for_type(content_type, context)
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.deepseek_api_url, headers=headers, json=payload) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        return result["choices"][0]["message"]["content"]
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Deepseek API error: {error_text}")
-                        raise Exception(f"Deepseek API error: {response.status}")
+                async with session.post(
+                    f"{self.ollama_url}/api/generate",
+                    json={
+                        "model": "deepseek-r1:1.5b",
+                        "prompt": prompt,
+                        "stream": False
+                    }
+                ) as response:
+                    if response.status != 200:
+                        raise Exception(f"Ollama API error: {response.status}")
+                    data = await response.json()
+                    return data.get("response", "")
         except Exception as e:
-            logger.error(f"Deepseek API error: {str(e)}")
-            raise
+            self.logger.error(f"Ollama API error: {str(e)}")
+            return ""
+            
+    def _get_prompt_for_type(self, content_type: ContentType, context: Optional[Dict] = None) -> str:
+        """Get prompt based on content type"""
+        context = context or {}
+        prompt = f"{SYSTEM_PROMPT}\n\n"
+        
+        if content_type == ContentType.MARKET:
+            prompt += f"Generate a tweet about BERA token price: ${context.get('price', '0')}, volume: ${context.get('volume', '0')}, 24h change: {context.get('change', '0')}%"
+        elif content_type == ContentType.NEWS:
+            prompt += f"Generate a tweet about Berachain news: {context.get('news', '')}"
+        else:
+            prompt += f"Generate a response to: {context.get('query', '')}"
+            
+        return prompt
