@@ -288,8 +288,8 @@ export async function createCreateTweetRequestV2(
     poll?: PollData;
   },
 ) {
-  const v2client = auth.getV2Client();
-  if (v2client == null) {
+  const v2client = auth.getV2Client?.();
+  if (!v2client) {
     throw new Error('V2 client is not initialized');
   }
   const { poll } = options || {};
@@ -910,7 +910,7 @@ export async function getTweetV2(
     placeFields?: TTweetv2PlaceField[];
   } = defaultOptions,
 ): Promise<Tweet | null> {
-  const v2client = auth.getV2Client();
+  const v2client = auth.getV2Client?.();
   if (!v2client) {
     throw new Error('V2 client is not initialized');
   }
@@ -957,7 +957,7 @@ export async function getTweetsV2(
     placeFields?: TTweetv2PlaceField[];
   } = defaultOptions,
 ): Promise<Tweet[]> {
-  const v2client = auth.getV2Client();
+  const v2client = auth.getV2Client?.();
   if (!v2client) {
     return [];
   }
