@@ -751,30 +751,44 @@ export class Scraper {
     accessSecret?: string,
   ): Promise<void> {
     try {
+      console.log('Starting login process...', { hasUsername: !!username, hasEmail: !!email });
+      
       const userAuth = new TwitterUserAuth(this.token);
       
-      if (appKey && appSecret && accessToken && accessSecret) {
+      if (username && password) {
+        console.log('Attempting username/password login...');
+        await userAuth.login(username, password, email, twoFactorSecret);
+        console.log('Login attempt completed');
+      } else if (appKey && appSecret && accessToken && accessSecret) {
+        console.log('Attempting API key authentication...');
         if (!userAuth.loginWithV2) {
           throw new Error('API key authentication not supported');
         }
         await userAuth.loginWithV2(appKey, appSecret, accessToken, accessSecret);
-      } else if (username && password) {
-        await userAuth.login(username, password, email, twoFactorSecret);
       } else {
         throw new Error('Either API credentials or username/password must be provided');
       }
 
       const isLoggedIn = await userAuth.isLoggedIn();
+      console.log('Login status:', { isLoggedIn });
+      
       if (!isLoggedIn) {
-        throw new Error('Authentication failed');
+        throw new Error('Authentication failed - not logged in after attempt');
       }
       
       this.auth = userAuth;
       this.authTrends = userAuth;
+      
+      const profile = await this.me();
+      console.log('Profile check:', { hasProfile: !!profile, username: profile?.username });
+      
     } catch (error) {
+      console.error('Login error details:', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       this.useGuestAuth();
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Authentication failed: ${errorMessage}`);
+      throw new Error(`Authentication failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

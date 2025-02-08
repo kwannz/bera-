@@ -6,13 +6,19 @@ describe('Test Environment Setup', () => {
     // Load environment variables from .env file
     dotenv.config();
 
-    // Set up environment variables
-    process.env.TWITTER_USERNAME = 'myjoi_ai';
-    process.env.TWITTER_PASSWORD = 'joiapp1278!';
-    process.env.TWITTER_EMAIL = 'joiweb3@gmail.com';
-    process.env.TWITTER_API_KEY = process.env.APIKey;
-    process.env.TWITTER_API_SECRET = process.env.APIKeySecret;
-    process.env.TWITTER_BEARER_TOKEN = process.env.BearerToken;
+    // Verify required environment variables
+    const requiredVars = ['tusername', 'tPassword', 'tEmail'];
+    const missingVars = requiredVars.filter(v => !process.env[v]);
+    if (missingVars.length > 0) {
+      throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+    }
+
+    // Log environment status (without exposing values)
+    console.log('Environment variables status:', {
+      hasUsername: !!process.env.tusername,
+      hasPassword: !!process.env.tPassword,
+      hasEmail: !!process.env.tEmail
+    });
 
     // Mock fetch
     global.fetch = jest.fn().mockImplementation(async () => ({
