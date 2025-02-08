@@ -67,18 +67,22 @@ class MockWebSocket:
                         await asyncio.sleep(0.1)
                     else:
                         raise RuntimeError("Failed to start message task")
-            except Exception as e:
+            except Exception as exc:
                 self._initialized = False
                 self._running = False
                 self.connected = False
                 if hasattr(self, '_message_task') and self._message_task:
                     self._message_task.cancel()
                     try:
-                        await asyncio.wait_for(self._message_task, timeout=0.1)
+                        await asyncio.wait_for(
+                            self._message_task, timeout=0.1
+                        )
                     except (asyncio.TimeoutError, asyncio.CancelledError):
                         pass
                     self._message_task = None
-                raise RuntimeError(f"Failed to initialize WebSocket: {str(e)}")
+                raise RuntimeError(
+                    f"Failed to initialize WebSocket: {str(exc)}"
+                )
                 
         except Exception:
             self._initialized = False
@@ -105,29 +109,35 @@ class MockWebSocket:
             if data["method"] == "SUBSCRIBE":
                 # Check rate limit before allowing subscription
                 if not await self.rate_limiter.check_rate_limit(
-                    "binance_ws", limit=5, window=60
+                    "binance_ws",
+                    limit=5,
+                    window=60
                 ):
                     raise websockets.exceptions.InvalidStatusCode(None, 429)
-                    
+
                 # Add new subscriptions
                 for param in data["params"]:
                     if param not in self.subscriptions:
                         self.subscriptions.append(param)
-                        
+
             elif data["method"] == "UNSUBSCRIBE":
                 # Remove subscriptions
                 for param in data["params"]:
                     if param in self.subscriptions:
                         self.subscriptions.remove(param)
-                        
+
             if not self.connected:  # Check connection after operation
                 raise websockets.exceptions.ConnectionClosed(None, None)
-                
+
         except json.JSONDecodeError:
-            raise websockets.exceptions.InvalidMessage("Invalid message format")
+            raise websockets.exceptions.InvalidMessage(
+                "Invalid message format"
+            )
         except KeyError:
-            raise websockets.exceptions.InvalidMessage("Missing required fields")
-        except Exception as e:
+            raise websockets.exceptions.InvalidMessage(
+                "Missing required fields"
+            )
+        except Exception:
             if not self.connected:
                 raise websockets.exceptions.ConnectionClosed(None, None)
             raise
