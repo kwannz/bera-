@@ -11,6 +11,7 @@ def test_tradingview_config():
     assert "interval" in config
     assert "theme" in config
     assert "container_id" in config
+    assert config["locale"] == "zh_CN"  # Verify Chinese locale
 
 
 def test_widget_config_overrides():
@@ -19,11 +20,16 @@ def test_widget_config_overrides():
     config = chart.get_widget_config(
         symbol="BERABTC",
         interval="1H",
+        theme="light",
+        studies=["RSI", "MACD"]
+
         theme="light"
     )
     assert config["symbol"] == "BERABTC"
     assert config["interval"] == "1H"
     assert config["theme"] == "light"
+    assert config["studies"] == ["RSI", "MACD"]
+
 
 
 def test_widget_html_generation():
@@ -34,6 +40,8 @@ def test_widget_html_generation():
     assert "tradingview-widget-container" in html
     assert "tradingview_chart" in html
     assert "TradingView.widget" in html
+    assert 'locale": "zh_CN"' in html  # Verify Chinese locale
+
 
 
 def test_widget_html_with_overrides():
@@ -42,6 +50,13 @@ def test_widget_html_with_overrides():
     html = chart.get_widget_html(
         symbol="BERABTC",
         interval="1H",
+        theme="light",
+        studies=["RSI", "MACD"]
+    )
+    assert "BERABTC" in html
+    assert "light" in html
+    assert "RSI" in html
+    assert "MACD" in html
         theme="light"
     )
     assert "BERABTC" in html
@@ -66,6 +81,8 @@ def test_chart_url_with_overrides():
         interval="1H",
         theme="light"
     )
+    assert "BERABTC" in url
+
     assert "BERA" in url
     assert "interval=1H" in url
     assert "theme=light" in url
