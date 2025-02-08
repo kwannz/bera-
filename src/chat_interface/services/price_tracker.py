@@ -23,10 +23,7 @@ class PriceTracker:
         self.api_key = os.getenv("BERATRAIL_API_KEY")
         # 5 minutes default
         self.cache_ttl = int(os.getenv("PRICE_CACHE_TTL", "300"))
-        self.api_url = os.getenv(
-            "BERATRAIL_API_URL",
-            "https://api.beratrail.io/v1"
-        )
+        self.api_url = "https://beratrail.io/api/v1"
         self.logger = get_logger(__name__)
         self._initialized = False
         if not self.api_key:
@@ -129,16 +126,14 @@ class PriceTracker:
                 async with session.get(url, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
-                        required_fields = [
-                            "price", "volume_24h", "price_change_24h"
-                        ]
+                        required_fields = ["price", "volume_24h", "price_change_24h"]
                         if all(k in data for k in required_fields):
                             # Transform to match expected format
                             price_data = {
                                 "berachain": {
-                                    "usd": data["price"],
-                                    "usd_24h_vol": data["volume_24h"],
-                                    "usd_24h_change": data["price_change_24h"]
+                                    "usd": float(data["price"]),
+                                    "usd_24h_vol": float(data["volume_24h"]),
+                                    "usd_24h_change": float(data["price_change_24h"])
                                 }
                             }
                             # Cache the valid response
@@ -159,19 +154,16 @@ class PriceTracker:
                             self.cache["last_price"] = price_data
                             self.metrics.end_request("price_tracker")
                             return price_data
-                        else:
-                            self.logger.error(
-                                "Invalid response format from BeraTrail API",
-                                extra={
-                                    "category": DebugCategory.API.value,
-                                    "response": str(data)
-                                }
-                            )
-                            self.metrics.record_error("price_tracker")
-                            return self.cache.get(
-                                "last_price",
-                                {"error": "Invalid response format"}
-                            )
+
+                        self.logger.error(
+                            "Invalid response format from BeraTrail API",
+                            extra={
+                                "category": DebugCategory.API.value,
+                                "response": str(data)
+                            }
+                        )
+                        self.metrics.record_error("price_tracker")
+                        return {"error": "Invalid response format"}
                     else:
                         self.logger.error(
                             f"BeraTrail API error: HTTP {response.status}",
@@ -181,17 +173,11 @@ class PriceTracker:
                             }
                         )
                         self.metrics.record_error("price_tracker")
-                        return self.cache.get(
-                            "last_price",
-                            {"error": f"HTTP {response.status}"}
-                        )
+                        return {"error": f"HTTP {response.status}"}
         except Exception as e:
             self.logger.error(
                 f"BeraTrail API error: {str(e)}",
                 extra={"category": DebugCategory.API.value}
             )
             self.metrics.record_error("price_tracker")
-            return self.cache.get(
-                "last_price",
-                {"error": str(e)}
-            )
+            return {"error": str(e)}
