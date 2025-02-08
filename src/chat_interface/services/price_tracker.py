@@ -1,10 +1,12 @@
 import os
+import json
 import aiohttp
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from ..utils.rate_limiter import RateLimiter
 from ..utils.retry import async_retry
 from ..utils.circuit_breaker import CircuitBreaker
 from ..utils.metrics import Metrics
+from ..utils.logging_config import get_logger, DebugCategory
 
 
 class PriceTracker:
@@ -19,24 +21,57 @@ class PriceTracker:
         self.circuit_breaker = circuit_breaker
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.api_key = os.getenv("COINGECKO_API_KEY")
+        if not self.api_key:
+            self.logger.error(
+                "Missing required environment variable: COINGECKO_API_KEY",
+                extra={"category": DebugCategory.CONFIG.value}
+            )
+        self.logger = get_logger(__name__)
 
     async def get_price_data(self) -> Dict[str, Any]:
         """获取BERA代币价格数据"""
         if not await self.rate_limiter.check_rate_limit("price_tracker"):
+            self.logger.warning(
+                "Rate limit exceeded for price tracker",
+                extra={"category": DebugCategory.API.value}
+            )
             return self.cache.get(
                 "last_price",
                 {"error": "Rate limit exceeded"}
             )
+
         try:
+            cached_data = await self.get_cached_price()
+            if cached_data:
+                return cached_data
+
             return await self.circuit_breaker.call(
                 self._fetch_price_data
             )
         except Exception as e:
+            self.logger.error(
+                f"Error fetching price data: {str(e)}",
+                extra={"category": DebugCategory.API.value}
+            )
             self.metrics.record_error("price_tracker")
             return self.cache.get(
                 "last_price",
                 {"error": str(e)}
             )
+
+    async def get_cached_price(self) -> Optional[Dict[str, Any]]:
+        """获取缓存的价格数据"""
+        try:
+            cached_data = await self.rate_limiter.redis_client.get("bera_price")
+            if cached_data:
+                return json.loads(cached_data)
+            return None
+        except Exception as e:
+            self.logger.error(
+                f"Redis cache error: {str(e)}",
+                extra={"category": DebugCategory.CACHE.value}
+            )
+            return None
 
     @async_retry(retries=3, delay=1.0, exceptions=(aiohttp.ClientError,))
     async def _fetch_price_data(self) -> Dict[str, Any]:
@@ -56,16 +91,41 @@ class PriceTracker:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        self.cache["last_price"] = data
-                        self.metrics.end_request("price_tracker")
-                        return data
+                        if "berachain" in data:
+                            # Cache the valid response
+                            await self.rate_limiter.redis_client.setex(
+                                "bera_price",
+                                300,  # Cache for 5 minutes
+                                json.dumps(data)
+                            )
+                            self.cache["last_price"] = data
+                            self.metrics.end_request("price_tracker")
+                            return data
+                        else:
+                            self.logger.error(
+                                "Invalid response format from CoinGecko API",
+                                extra={"category": DebugCategory.API.value}
+                            )
+                            self.metrics.record_error("price_tracker")
+                            return self.cache.get(
+                                "last_price",
+                                {"error": "Invalid response format"}
+                            )
                     else:
+                        self.logger.error(
+                            f"CoinGecko API error: HTTP {response.status}",
+                            extra={"category": DebugCategory.API.value}
+                        )
                         self.metrics.record_error("price_tracker")
                         return self.cache.get(
                             "last_price",
                             {"error": f"HTTP {response.status}"}
                         )
         except Exception as e:
+            self.logger.error(
+                f"CoinGecko API error: {str(e)}",
+                extra={"category": DebugCategory.API.value}
+            )
             self.metrics.record_error("price_tracker")
             return self.cache.get(
                 "last_price",
