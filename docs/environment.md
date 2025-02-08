@@ -47,6 +47,11 @@ export BERATRAIL_API_KEY=your_api_key_here  # Required for authentication
 export BERATRAIL_API_URL=https://api.beratrail.io/v1  # Default API endpoint
 export PRICE_CACHE_TTL=300  # Cache TTL in seconds (default: 300)
 
+# Fallback APIs Configuration
+export COINGECKO_API_KEY=your_coingecko_api_key  # Optional, used as first fallback
+export OKX_API_KEY=your_okx_api_key  # Optional, used as second fallback
+export OKX_SECRET_KEY=your_okx_secret_key  # Required if OKX_API_KEY is set
+
 # Redis
 export REDIS_HOST=localhost
 export REDIS_PORT=6379
