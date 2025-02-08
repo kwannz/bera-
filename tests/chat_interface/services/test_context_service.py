@@ -38,5 +38,12 @@ async def test_context_limit(context_manager: ContextManager):
         )
 
     context = await context_manager.get_context(session_id)
-    assert len(context) == max_messages
-    assert context[-1]["content"] == f"message {max_messages + 4}"
+    # Should have first message + last 2 rounds (4 messages)
+    assert len(context) == 5
+    # First message should be the first user message
+    assert context[0]["content"] == "message 0"
+    # Last 4 messages should be from the last 2 rounds
+    assert context[-4]["content"] == "message 11"
+    assert context[-3]["content"] == "message 12"
+    assert context[-2]["content"] == "message 13"
+    assert context[-1]["content"] == "message 14"

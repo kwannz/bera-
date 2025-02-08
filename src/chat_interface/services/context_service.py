@@ -1,7 +1,6 @@
 import redis
-from typing import List, Dict, Set
+from typing import List, Dict
 import json
-import re
 
 
 class ContextManager:
@@ -14,20 +13,25 @@ class ContextManager:
         self.max_context_rounds = 5
 
     def _compress_context(self, context: List[Dict]) -> List[Dict]:
-        """使用实体识别算法压缩上下文"""
+        """压缩对话上下文，保留关键信息
+
+        压缩策略:
+        1. 如果消息数量少于等于2条，保留所有消息
+        2. 保留第一条用户消息作为初始上下文
+        3. 保留最后2轮对话（4条消息）作为即时上下文
+        """
+        if len(context) <= 2:
+            return context
+
+        # Keep first user message for context
         compressed = []
-        entities: Set[str] = set()
-
-        for msg in context:
-            # Extract entities (keywords, numbers, symbols)
-            content = str(msg.get("content", ""))
-            pattern = r'\b\w+\b|\$\d+\.?\d*|\d+%'
-            msg_entities = set(re.findall(pattern, content))
-
-            # Only keep messages with new entities
-            if msg_entities - entities:
+        for msg in context[:2]:  # Look in first 2 messages
+            if msg.get("role") == "user":
                 compressed.append(msg)
-                entities.update(msg_entities)
+                break
+
+        # Keep last 2 rounds (4 messages) for immediate context
+        compressed.extend(context[-4:])
 
         return compressed
 
