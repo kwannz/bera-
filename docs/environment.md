@@ -2,12 +2,28 @@
 
 ## API Configuration
 
+### DEX APIs
+- `PANCAKESWAP_API_KEY` - PancakeSwap API key (optional)
+  - Documentation: https://docs.pancakeswap.finance/developers/api
+- `UNISWAP_API_KEY` - Uniswap API key (optional)
+  - Documentation: https://docs.uniswap.org/api/introduction
+- `JUPITER_API_KEY` - Jupiter API key (optional)
+  - Documentation: https://station.jup.ag/docs/apis/swap-api
+
+### WebSocket APIs
+- `BINANCE_WS_KEY` - Binance WebSocket API key (optional)
+  - Documentation: https://developers.binance.com/docs/binance-spot-api-docs/web-socket-streams
+
+### Chart APIs
+- `TRADINGVIEW_API_KEY` - TradingView API key (optional)
+  - Documentation: https://www.tradingview.com/charting-library-docs/latest/api/
+
 ### Ollama API
 - `OLLAMA_URL` - Ollama API endpoint URL (default: http://localhost:11434)
 - `MODEL_TEMPERATURE` - Temperature setting for model responses (default: 0.7)
 
 ### BeraTrail API
-- `BERATRAIL_API_KEY` - API key for authentication (required)
+- `BERATRAIL_API_KEY` - API key for authentication (optional)
 - `BERATRAIL_API_URL` - BeraTrail API endpoint URL (default: https://api.beratrail.io/v1)
 
 ## Redis Configuration
@@ -47,10 +63,21 @@ export BERATRAIL_API_KEY=your_api_key_here  # Required for authentication
 export BERATRAIL_API_URL=https://api.beratrail.io/v1  # Default API endpoint
 export PRICE_CACHE_TTL=300  # Cache TTL in seconds (default: 300)
 
+# DEX APIs Configuration
+export PANCAKESWAP_API_KEY=your_key  # Optional, see https://docs.pancakeswap.finance/developers/api
+export UNISWAP_API_KEY=your_key      # Optional, see https://docs.uniswap.org/api/introduction
+export JUPITER_API_KEY=your_key       # Optional, see https://station.jup.ag/docs/apis/swap-api
+
+# WebSocket APIs Configuration
+export BINANCE_WS_KEY=your_key       # Optional, see https://developers.binance.com/docs/binance-spot-api-docs/web-socket-streams
+
+# Chart APIs Configuration
+export TRADINGVIEW_API_KEY=your_key   # Optional, see https://www.tradingview.com/charting-library-docs/latest/api/
+
 # Fallback APIs Configuration
 export COINGECKO_API_KEY=your_coingecko_api_key  # Optional, used as first fallback
-export OKX_API_KEY=your_okx_api_key  # Optional, used as second fallback
-export OKX_SECRET_KEY=your_okx_secret_key  # Required if OKX_API_KEY is set
+export OKX_API_KEY=your_okx_api_key              # Optional, used as second fallback
+export OKX_SECRET_KEY=your_okx_secret_key        # Required if OKX_API_KEY is set
 
 # Redis
 export REDIS_HOST=localhost

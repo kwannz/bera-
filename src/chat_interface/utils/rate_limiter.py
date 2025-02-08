@@ -13,11 +13,16 @@ class RateLimiter:
         self._redis_client = redis_client
         # Default rate limits for different APIs
         self.limits = {
-            "beratrail": 60,  # requests per minute
-            "coingecko": 50,  # requests per minute
-            "okx": 20,  # requests per second
+            "beratrail": 60,    # requests per minute
+            "coingecko": 50,    # requests per minute
+            "okx": 20,          # requests per second
             "news_monitor": 30,  # requests per minute
-            "analytics": 20  # requests per minute
+            "analytics": 20,     # requests per minute
+            "pancakeswap": 100, # requests per minute
+            "uniswap": 100,     # requests per minute
+            "jupiter": 60,      # requests per minute
+            "binance_ws": 5,    # connections per minute
+            "tradingview": 30   # requests per minute
         }
         # Time windows in seconds
         self.windows = {
