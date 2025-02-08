@@ -237,14 +237,20 @@ class ChatHandler:
         else:
             try:
                 if (not isinstance(price_data, BaseException) and
-                        isinstance(price_data, dict) and
-                        "berachain" in price_data):
-                    berachain_data = price_data["berachain"]
-                    market_data = {
-                        "📈 当前价格": f"${berachain_data['usd']}",
-                        "💰 24小时交易量": f"${berachain_data['usd_24h_vol']:,}",
-                        "📊 24小时涨跌": f"{berachain_data['usd_24h_change']:+}%"
-                    }
+                        isinstance(price_data, dict)):
+                    if "berachain" in price_data:
+                        berachain_data = price_data["berachain"]
+                        market_data = {
+                            "📈 当前价格": f"${berachain_data['usd']}",
+                            "💰 24小时交易量": f"${berachain_data['usd_24h_vol']:,}",
+                            "📊 24小时涨跌": f"{berachain_data['usd_24h_change']:+}%"
+                        }
+                    elif "price" in price_data and "volume_24h" in price_data:
+                        market_data = {
+                            "📈 当前价格": f"${float(price_data['price']):.4f}",
+                            "💰 24小时交易量": f"${float(price_data['volume_24h']):,.2f}",
+                            "📊 24小时涨跌": f"{float(price_data['price_change_24h']):+.2f}%"
+                        }
                 else:
                     self.logger.error(
                         "Invalid market data format",
@@ -588,14 +594,20 @@ async def chat_endpoint(request: ChatRequest, response: Response):
         else:
             try:
                 if (not isinstance(price_data, BaseException) and
-                        isinstance(price_data, dict) and
-                        "berachain" in price_data):
-                    berachain_data = price_data["berachain"]
-                    market_data = {
-                        "📈 当前价格": f"${berachain_data['usd']}",
-                        "💰 24小时交易量": f"${berachain_data['usd_24h_vol']:,}",
-                        "📊 24小时涨跌": f"{berachain_data['usd_24h_change']:+}%"
-                    }
+                        isinstance(price_data, dict)):
+                    if "berachain" in price_data:
+                        berachain_data = price_data["berachain"]
+                        market_data = {
+                            "📈 当前价格": f"${berachain_data['usd']}",
+                            "💰 24小时交易量": f"${berachain_data['usd_24h_vol']:,}",
+                            "📊 24小时涨跌": f"{berachain_data['usd_24h_change']:+}%"
+                        }
+                    elif "price" in price_data and "volume_24h" in price_data:
+                        market_data = {
+                            "📈 当前价格": f"${float(price_data['price']):.4f}",
+                            "💰 24小时交易量": f"${float(price_data['volume_24h']):,.2f}",
+                            "📊 24小时涨跌": f"{float(price_data['price_change_24h']):+.2f}%"
+                        }
                 else:
                     logger.error(
                         "Invalid market data format",
