@@ -1,3 +1,4 @@
+import os
 import json
 import aiohttp
 from typing import List, Dict, Any, Optional
@@ -20,6 +21,11 @@ class NewsMonitor:
         self.circuit_breaker = circuit_breaker
         self.cache: Dict[str, List[Dict[str, Any]]] = {}
         self.logger = get_logger(__name__)
+        self.cache_ttl = int(os.getenv("NEWS_CACHE_TTL", "600"))  # 10 minutes default
+        self.substack_url = os.getenv(
+            "BERAHOME_SUBSTACK_URL",
+            "https://berahome.substack.com"
+        )
 
     async def get_latest_news(self) -> List[Dict[str, Any]]:
         """获取最新的Berachain生态新闻"""
@@ -53,9 +59,41 @@ class NewsMonitor:
         """获取缓存的新闻数据"""
         try:
             cached_data = await self.rate_limiter.redis_client.get("bera_news")
-            if cached_data:
-                return json.loads(cached_data)
-            return None
+            if not cached_data:
+                return None
+
+            try:
+                data = json.loads(cached_data)
+                if not isinstance(data, list):
+                    self.logger.warning(
+                        "Invalid cache data format",
+                        extra={"category": DebugCategory.CACHE.value}
+                    )
+                    await self.rate_limiter.redis_client.delete("bera_news")
+                    return None
+
+                # Validate each news item
+                valid_news = [
+                    item for item in data
+                    if isinstance(item, dict) and self._validate_news_item(item)
+                ]
+
+                if not valid_news:
+                    self.logger.warning(
+                        "No valid news items in cache",
+                        extra={"category": DebugCategory.CACHE.value}
+                    )
+                    await self.rate_limiter.redis_client.delete("bera_news")
+                    return None
+
+                return valid_news
+            except json.JSONDecodeError:
+                self.logger.error(
+                    "Failed to parse cached news data",
+                    extra={"category": DebugCategory.CACHE.value}
+                )
+                await self.rate_limiter.redis_client.delete("bera_news")
+                return None
         except Exception as e:
             self.logger.error(
                 f"Redis cache error: {str(e)}",
@@ -91,11 +129,17 @@ class NewsMonitor:
                             ]
                             if news:
                                 # Cache valid news data
-                                await self.rate_limiter.redis_client.setex(
-                                    "bera_news",
-                                    600,  # Cache for 10 minutes
-                                    json.dumps(news)
-                                )
+                                try:
+                                    await self.rate_limiter.redis_client.setex(
+                                        "bera_news",
+                                        self.cache_ttl,
+                                        json.dumps(news)
+                                    )
+                                except Exception as e:
+                                    self.logger.error(
+                                        f"Failed to cache news data: {str(e)}",
+                                        extra={"category": DebugCategory.CACHE.value}
+                                    )
                                 self.cache["latest_news"] = news
                                 self.metrics.end_request("news_monitor")
                                 return news

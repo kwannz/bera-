@@ -21,12 +21,14 @@ class PriceTracker:
         self.circuit_breaker = circuit_breaker
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.api_key = os.getenv("COINGECKO_API_KEY")
+        self.cache_ttl = int(os.getenv("PRICE_CACHE_TTL", "300"))  # 5 minutes default
+        self.logger = get_logger(__name__)
+        
         if not self.api_key:
             self.logger.error(
                 "Missing required environment variable: COINGECKO_API_KEY",
                 extra={"category": DebugCategory.CONFIG.value}
             )
-        self.logger = get_logger(__name__)
 
     async def get_price_data(self) -> Dict[str, Any]:
         """获取BERA代币价格数据"""
@@ -63,9 +65,26 @@ class PriceTracker:
         """获取缓存的价格数据"""
         try:
             cached_data = await self.rate_limiter.redis_client.get("bera_price")
-            if cached_data:
-                return json.loads(cached_data)
-            return None
+            if not cached_data:
+                return None
+
+            try:
+                data = json.loads(cached_data)
+                if not isinstance(data, dict) or "berachain" not in data:
+                    self.logger.warning(
+                        "Invalid cache data format",
+                        extra={"category": DebugCategory.CACHE.value}
+                    )
+                    await self.rate_limiter.redis_client.delete("bera_price")
+                    return None
+                return data
+            except json.JSONDecodeError:
+                self.logger.error(
+                    "Failed to parse cached data",
+                    extra={"category": DebugCategory.CACHE.value}
+                )
+                await self.rate_limiter.redis_client.delete("bera_price")
+                return None
         except Exception as e:
             self.logger.error(
                 f"Redis cache error: {str(e)}",
@@ -93,11 +112,17 @@ class PriceTracker:
                         data = await response.json()
                         if "berachain" in data:
                             # Cache the valid response
-                            await self.rate_limiter.redis_client.setex(
-                                "bera_price",
-                                300,  # Cache for 5 minutes
-                                json.dumps(data)
-                            )
+                            try:
+                                await self.rate_limiter.redis_client.setex(
+                                    "bera_price",
+                                    self.cache_ttl,
+                                    json.dumps(data)
+                                )
+                            except Exception as e:
+                                self.logger.error(
+                                    f"Failed to cache price data: {str(e)}",
+                                    extra={"category": DebugCategory.CACHE.value}
+                                )
                             self.cache["last_price"] = data
                             self.metrics.end_request("price_tracker")
                             return data
