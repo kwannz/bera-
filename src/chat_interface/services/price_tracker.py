@@ -1,4 +1,5 @@
 import os
+import asyncio
 import aiohttp
 from typing import Dict, Any
 from ..utils.rate_limiter import RateLimiter
@@ -17,31 +18,55 @@ class PriceTracker:
                 "last_price",
                 {"error": "Rate limit exceeded"}
             )
+        return await self._fetch_price_data()
+
+    async def _fetch_price_data(self) -> Dict[str, Any]:
+
+        url = "https://api.coingecko.com/api/v3/simple/price"
+        params = {
+            "ids": "berachain",
+            "vs_currencies": "usd",
+            "include_24hr_vol": "true",
+            "include_24hr_change": "true",
+            "x_cg_api_key": self.api_key
+        }
 
         try:
             async with aiohttp.ClientSession() as session:
-                # Using CoinGecko API
-                url = "https://api.coingecko.com/api/v3/simple/price"
-                params = {
-                    "ids": "berachain",
-                    "vs_currencies": "usd",
-                    "include_24hr_vol": "true",
-                    "include_24hr_change": "true",
-                    "x_cg_api_key": self.api_key
-                }
+                for attempt in range(3):
+                    try:
+                        async with session.get(url, params=params) as response:
+                            if response.status == 200:
+                                data = await response.json()
+                                self.cache["last_price"] = data
+                                return data
+                            elif attempt < 2:
+                                await asyncio.sleep(1 * (attempt + 1))
+                                continue
+                            else:
+                                return self.cache.get(
+                                    "last_price",
+                                    {
+                                        "error": f"HTTP {response.status}"
+                                    }
+                                )
+                    except aiohttp.ClientError:
+                        if attempt < 2:
+                            await asyncio.sleep(1 * (attempt + 1))
+                            continue
+                        return self.cache.get(
+                            "last_price",
+                            {"error": "API connection error"}
+                        )
 
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        self.cache["last_price"] = data
-                        return data
-                    return self.cache.get(
-                        "last_price",
-                        {"error": "API request failed"}
-                    )
+                # If all attempts failed
+                return self.cache.get(
+                    "last_price",
+                    {"error": "All attempts failed"}
+                )
 
-        except Exception as e:
+        except Exception:
             return self.cache.get(
                 "last_price",
-                {"error": str(e)}
+                {"error": "Unexpected error"}
             )
