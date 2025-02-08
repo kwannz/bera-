@@ -72,6 +72,7 @@ class AIModelManager:
                         await asyncio.sleep(RETRY_DELAY * (attempt + 1))
                     else:
                         raise
+            return None
                 
         except Exception as e:
             self.logger.error(

@@ -24,8 +24,8 @@ class CategoryFilter(logging.Filter):
         
     def filter(self, record: logging.LogRecord) -> bool:
         if not hasattr(record, 'category'):
-            record.category = 'general'
-        return not self.debug_categories or record.category in [cat.value for cat in self.debug_categories]
+            setattr(record, 'category', 'general')
+        return not self.debug_categories or getattr(record, 'category') in [cat.value for cat in self.debug_categories]
 
 def setup_logging(debug_categories: Optional[list[DebugCategory]] = None, log_file: str = 'berabot.log') -> None:
     root_logger = logging.getLogger()
