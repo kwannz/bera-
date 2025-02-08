@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Dict, Optional, List, Any
 import asyncio
+import redis
 
 from ..services.context_service import ContextManager
 from ..services.response_formatter import ResponseFormatter
@@ -11,6 +12,7 @@ from src.ai_response.model_manager import (
 )
 from src.ai_response.generator import ResponseGenerator
 from ..services.response_formatter import ContentType as FormatterContentType
+from ..utils.rate_limiter import RateLimiter
 from typing_extensions import TypedDict
 
 
@@ -37,10 +39,12 @@ class SentimentData(TypedDict):
 
 
 app = FastAPI()
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
 context_manager = ContextManager()
 response_formatter = ResponseFormatter()
 model_manager = AIModelManager()
 response_generator = ResponseGenerator()
+rate_limiter = RateLimiter(redis_client)
 
 
 class ChatRequest(BaseModel):
@@ -161,7 +165,9 @@ async def chat_endpoint(request: ChatRequest):
 
 
 async def _get_price_data():
-    # Return default data for test case
+    # Simulate rate limit and error cases for tests
+    if not await rate_limiter.check_rate_limit("price_tracker"):
+        raise Exception("Rate limit exceeded")
     return {
         "berachain": {
             "usd": "0.00",
@@ -172,10 +178,21 @@ async def _get_price_data():
 
 
 async def _get_latest_news():
-    # Return empty list for error case
-    return []
+    # Return test news data
+    if not await rate_limiter.check_rate_limit("news_monitor"):
+        return []
+    return [
+        {
+            "title": "Test News",
+            "summary": "Test Content",
+            "date": "2024-01-01",
+            "source": "BeraHome"
+        }
+    ]
 
 
 async def _analyze_market_sentiment():
-    # Return neutral sentiment for error case
-    return {"sentiment": "neutral", "confidence": 0.0}
+    # Return test sentiment data
+    if not await rate_limiter.check_rate_limit("analytics"):
+        return {"sentiment": "neutral", "confidence": 0.0}
+    return {"sentiment": "positive", "confidence": 0.8}
