@@ -69,12 +69,12 @@ async def redis_client() -> AsyncGenerator[redis.asyncio.Redis, None]:
 @pytest.fixture(scope="function")
 async def rate_limiter(
     redis_client: redis.asyncio.Redis
-) -> AsyncGenerator[RateLimiter, None]:
+) -> RateLimiter:
     """Create a rate limiter instance for testing"""
     limiter = RateLimiter(redis_client)
     try:
         await asyncio.wait_for(limiter.initialize(), timeout=5.0)
-        yield limiter
+        return limiter
     except asyncio.TimeoutError as e:
         raise RuntimeError(f"Rate limiter initialization timed out: {str(e)}")
     except Exception as e:
@@ -84,12 +84,12 @@ async def rate_limiter(
 @pytest.fixture(scope="function")
 async def context_manager(
     redis_client: redis.asyncio.Redis
-) -> AsyncGenerator[ContextManager, None]:
+) -> ContextManager:
     """Create a context manager instance for testing"""
     manager = ContextManager(redis_client)
     try:
         await asyncio.wait_for(manager.initialize(), timeout=5.0)
-        yield manager
+        return manager
     except asyncio.TimeoutError as e:
         raise RuntimeError(
             f"Context manager initialization timed out: {str(e)}"
@@ -122,7 +122,7 @@ async def chat_handler(
     circuit_breaker: CircuitBreaker,
     response_formatter: ResponseFormatter,
     monkeypatch
-) -> AsyncGenerator[ChatHandler, None]:
+) -> ChatHandler:
     """创建测试用的聊天处理器"""
     # Mock responses
     async def mock_get_price_data():
@@ -196,7 +196,7 @@ async def chat_handler(
     )
     try:
         await asyncio.wait_for(handler.initialize(), timeout=5.0)
-        yield handler
+        return handler
     except asyncio.TimeoutError as e:
         raise RuntimeError(f"Chat handler initialization timed out: {str(e)}")
     except Exception as e:
