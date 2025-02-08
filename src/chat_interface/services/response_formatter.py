@@ -28,7 +28,7 @@ class ResponseFormatter:
     def _apply_market_template(data: Dict[str, Any]) -> str:
         """使用PRICE_UPDATE_TEMPLATE模板"""
         if "error" in data:
-            return f"❌ 错误：{data['error']}"
+            return data["error"]
         return (
             f"📈 当前价格：${data.get('price', '0.00')}\n"
             f"💰 24小时交易量：${data.get('volume', '0')}\n"
