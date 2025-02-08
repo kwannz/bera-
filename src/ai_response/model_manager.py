@@ -117,7 +117,7 @@ class AIModelManager:
         self.logger = get_logger(__name__)
         self.model_type = ModelType.OLLAMA
         self.ollama_url = ollama_url or os.getenv(
-            "DEEPSEEK_API_URL",
+            "OLLAMA_URL",
             "http://localhost:11434"
         )
         
@@ -169,49 +169,11 @@ class AIModelManager:
     async def _generate_ollama_content(self, prompt: str, max_length: int) -> Optional[str]:
         """生成AI响应内容"""
         try:
-            # Required environment variables:
-            # DEEPSEEK_API_KEY - API key for authentication
-            # DEEPSEEK_MODEL - Model name (default: deepseek-chat)
-            # MODEL_TEMPERATURE - Temperature setting (default: 0.7)
-            api_key = os.getenv("DEEPSEEK_API_KEY")
-            if not api_key:
-                self.logger.error(
-                    "Missing required environment variable: DEEPSEEK_API_KEY",
-                    extra={"category": DebugCategory.CONFIG.value}
-                )
-                return None
-
-            model = os.getenv("DEEPSEEK_MODEL")
-            if not model:
-                self.logger.error(
-                    "Missing required environment variable: DEEPSEEK_MODEL",
-                    extra={"category": DebugCategory.CONFIG.value}
-                )
-                return None
-
-            try:
-                temp_str = os.getenv("MODEL_TEMPERATURE")
-                if not temp_str:
-                    self.logger.error(
-                        "Missing required environment variable: MODEL_TEMPERATURE",
-                        extra={"category": DebugCategory.CONFIG.value}
-                    )
-                    return None
-                temp = float(temp_str)
-            except (TypeError, ValueError):
-                self.logger.error(
-                    "Invalid MODEL_TEMPERATURE value",
-                    extra={"category": DebugCategory.CONFIG.value}
-                )
-                return None
-
-            # Use API key in Authorization header only
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
+            # Ollama configuration
+            model = "deepseek-r1:1.5b"
+            temp = float(os.getenv("MODEL_TEMPERATURE", "0.7"))
             
-            # Keep sensitive info out of payload
+            # Prepare payload for Ollama API
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
@@ -224,44 +186,31 @@ class AIModelManager:
             }
             
             self.logger.debug(
-                "Sending request to Deepseek API",
+                "Sending request to Ollama API",
                 extra={
                     "category": DebugCategory.API.value,
                     "prompt_length": len(prompt),
-                    "max_length": max_length
+                    "max_length": max_length,
+                    "model": model
                 }
             )
             
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self.ollama_url}/api/chat",
-                    headers=headers,
                     json=payload,
                     timeout=10.0  # 10 second timeout
                 ) as response:
-                    response_text = await response.text()
-                    
                     if response.status == 200:
                         try:
-                            result = json.loads(response_text)
+                            result = await response.json()
                             if (isinstance(result, dict) and
-                                    "message" in result and
-                                    isinstance(result["message"], dict) and
-                                    "content" in result["message"]):
-                                content = result["message"]["content"]
-                                if content and isinstance(content, str):
-                                    return content[:max_length]
-                                else:
-                                    self.logger.error(
-                                        "Empty or invalid content in response",
-                                        extra={
-                                            "category": DebugCategory.API.value,
-                                            "response": str(result)
-                                        }
-                                    )
+                                    "response" in result and
+                                    isinstance(result["response"], str)):
+                                return result["response"][:max_length]
                             else:
                                 self.logger.error(
-                                    "Invalid response format",
+                                    "Invalid response format from Ollama API",
                                     extra={
                                         "category": DebugCategory.API.value,
                                         "response": str(result)
@@ -269,39 +218,31 @@ class AIModelManager:
                                 )
                         except json.JSONDecodeError as e:
                             self.logger.error(
-                                f"Failed to parse response JSON: {str(e)}",
+                                f"Failed to parse Ollama response: {str(e)}",
                                 extra={
                                     "category": DebugCategory.API.value,
-                                    "response_text": response_text
+                                    "response": await response.text()
                                 }
                             )
-                    elif response.status == 429:
-                        self.logger.warning(
-                            "Rate limit exceeded",
-                            extra={
-                                "category": DebugCategory.API.value,
-                                "response": response_text
-                            }
-                        )
                     else:
                         self.logger.error(
-                            f"API error (status {response.status})",
+                            f"Ollama API error (status {response.status})",
                             extra={
                                 "category": DebugCategory.API.value,
-                                "response": response_text
+                                "response": await response.text()
                             }
                         )
                     return None
                     
         except asyncio.TimeoutError:
             self.logger.error(
-                "API request timed out",
+                "Ollama API request timed out",
                 extra={"category": DebugCategory.API.value}
             )
             return None
         except Exception as e:
             self.logger.error(
-                f"Unexpected error: {str(e)}",
+                f"Unexpected error in Ollama API call: {str(e)}",
                 extra={
                     "category": DebugCategory.API.value,
                     "error_type": type(e).__name__
