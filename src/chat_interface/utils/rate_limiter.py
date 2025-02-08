@@ -30,11 +30,15 @@ class RateLimiter:
         key = f"rate_limit:{key}"
 
         pipe = self.redis.pipeline()
-        pipe.zadd(key, {str(current): current})
+        # Remove old entries first
         pipe.zremrangebyscore(key, 0, current - window)
+        # Get current count before adding new request
         pipe.zcard(key)
+        # Add new request
+        pipe.zadd(key, {str(current): current})
         pipe.expire(key, window)
         results = pipe.execute()
 
-        request_count = results[2]
-        return request_count <= limit
+        # Check count before new request was added
+        request_count = results[1]
+        return request_count < limit
