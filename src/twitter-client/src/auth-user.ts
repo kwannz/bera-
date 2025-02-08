@@ -58,6 +58,8 @@ export class TwitterUserAuth extends TwitterGuestAuth {
   private username: string;
   private password: string;
   private email: string;
+  private maxRetries = 3;
+  private retryDelay = 1000;
 
   constructor(
     bearerToken: string,
@@ -73,20 +75,24 @@ export class TwitterUserAuth extends TwitterGuestAuth {
   }
 
   async isLoggedIn(): Promise<boolean> {
-    const res = await requestApi<TwitterUserAuthVerifyCredentials>(
-      'https://api.twitter.com/1.1/account/verify_credentials.json',
-      this,
-    );
-    if (!res.success) {
+    try {
+      const res = await requestApi<TwitterUserAuthVerifyCredentials>(
+        'https://api.twitter.com/1.1/account/verify_credentials.json',
+        this,
+      );
+      if (!res.success) {
+        return false;
+      }
+
+      const { value: verify } = res;
+      this.userProfile = parseProfile(
+        verify as LegacyUserRaw,
+        (verify as unknown as { verified: boolean }).verified,
+      );
+      return verify && !verify.errors?.length;
+    } catch {
       return false;
     }
-
-    const { value: verify } = res;
-    this.userProfile = parseProfile(
-      verify as LegacyUserRaw,
-      (verify as unknown as { verified: boolean }).verified,
-    );
-    return verify && !verify.errors?.length;
   }
 
   async me(): Promise<Profile | undefined> {
@@ -95,6 +101,21 @@ export class TwitterUserAuth extends TwitterGuestAuth {
     }
     await this.isLoggedIn();
     return this.userProfile;
+  }
+
+  private async retryWithDelay<T>(
+    operation: () => Promise<T>,
+    retryCount = 0
+  ): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (retryCount < this.maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, this.retryDelay * Math.pow(2, retryCount)));
+        return this.retryWithDelay(operation, retryCount + 1);
+      }
+      throw error;
+    }
   }
 
   async login(
@@ -115,36 +136,38 @@ export class TwitterUserAuth extends TwitterGuestAuth {
       await super.login();
       let next = await this.initLogin();
       
-      let flow = await this.handleJsInstrumentationSubtask(next);
-      if ('err' in flow) throw flow.err;
-      
-      flow = await this.handleEnterUserIdentifierSSO(flow, username);
-      if ('err' in flow) throw flow.err;
-      
-      flow = await this.handleEnterPassword(flow, password);
-      if ('err' in flow) throw flow.err;
-      
-      if ('subtask' in flow && flow.subtask?.subtask_id === 'AccountDuplicationCheck') {
-        flow = await this.handleAccountDuplicationCheck(flow);
+      try {
+        let flow = await this.handleJsInstrumentationSubtask(next as FlowTokenResultSuccess);
         if ('err' in flow) throw flow.err;
-      }
-      
-      if ('subtask' in flow && flow.subtask?.subtask_id === 'LoginTwoFactorAuthChallenge' && twoFactorSecret) {
-        flow = await this.handleTwoFactorAuthChallenge(flow, twoFactorSecret);
+        
+        flow = await this.handleEnterUserIdentifierSSO(flow as FlowTokenResultSuccess, username);
         if ('err' in flow) throw flow.err;
-      }
-      
-      if ('subtask' in flow && flow.subtask?.subtask_id === 'LoginSuccessSubtask') {
-        await this.handleSuccessSubtask(flow);
-      } else {
-        throw new Error('Login flow did not complete successfully');
+        
+        flow = await this.handleEnterPassword(flow as FlowTokenResultSuccess, password);
+        if ('err' in flow) throw flow.err;
+        
+        if ('subtask' in flow && flow.subtask?.subtask_id === 'AccountDuplicationCheck') {
+          flow = await this.handleAccountDuplicationCheck(flow as FlowTokenResultSuccess);
+          if ('err' in flow) throw flow.err;
+        }
+        
+        if ('subtask' in flow && flow.subtask?.subtask_id === 'LoginTwoFactorAuthChallenge' && twoFactorSecret) {
+          flow = await this.handleTwoFactorAuthChallenge(flow as FlowTokenResultSuccess, twoFactorSecret);
+          if ('err' in flow) throw flow.err;
+        }
+        
+        if ('subtask' in flow && flow.subtask?.subtask_id === 'LoginSuccessSubtask') {
+          await this.handleSuccessSubtask(flow as FlowTokenResultSuccess);
+        } else {
+          throw new Error('Login flow did not complete successfully');
+        }
 
-      if (appKey && appSecret && accessToken && accessSecret) {
-        this.loginWithV2(appKey, appSecret, accessToken, accessSecret);
+        if (appKey && appSecret && accessToken && accessSecret) {
+          this.loginWithV2(appKey, appSecret, accessToken, accessSecret);
+        }
+      } catch (error) {
+        throw new Error(`Login failed: ${error instanceof Error ? error.message : String(error)}`);
       }
-    } catch (error) {
-      throw new Error(`Login failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
   }
 
   async logout(): Promise<void> {
@@ -348,6 +371,8 @@ export class TwitterUserAuth extends TwitterGuestAuth {
 
   private async executeFlowTask(
     data: TwitterUserAuthFlowRequest,
+    retryCount = 0,
+    maxRetries = 3
   ): Promise<FlowTokenResult> {
     const onboardingTaskUrl =
       'https://api.twitter.com/1.1/onboarding/task.json';
@@ -361,7 +386,7 @@ export class TwitterUserAuth extends TwitterGuestAuth {
       authorization: `Bearer ${this.bearerToken}`,
       cookie: await this.getCookieString(),
       'content-type': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'x-guest-token': token,
       'x-twitter-auth-type': 'OAuth2Client',
       'x-twitter-active-user': 'yes',
@@ -370,63 +395,75 @@ export class TwitterUserAuth extends TwitterGuestAuth {
       'accept-language': 'en-US,en;q=0.9',
       'origin': 'https://twitter.com',
       'referer': 'https://twitter.com/',
-      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua': '"Not_A Brand";v="99", "Google Chrome";v="120", "Chromium";v="120"',
       'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
+      'sec-ch-ua-platform': '"macOS"',
       'sec-fetch-dest': 'empty',
       'sec-fetch-mode': 'cors',
-      'sec-fetch-site': 'same-site'
-    });
-    await this.installCsrfToken(headers);
-
-    const res = await this.fetch(onboardingTaskUrl, {
-      credentials: 'include',
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(data),
+      'sec-fetch-site': 'same-site',
+      'x-csrf-token': await this.getCsrfToken(),
+      'x-twitter-client-version': 'web/2.0.0'
     });
 
-    await updateCookieJar(this.jar, res.headers);
+    try {
+      const res = await this.fetch(onboardingTaskUrl, {
+        credentials: 'include',
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(data),
+      });
 
-    if (!res.ok) {
-      return { status: 'error', err: new Error(await res.text()) };
-    }
+      await updateCookieJar(this.jar, res.headers);
 
-    const flow: TwitterUserAuthFlowResponse = await res.json();
-    if (flow?.flow_token == null) {
-      return { status: 'error', err: new Error('flow_token not found.') };
-    }
+      if (!res.ok) {
+        const errorText = await res.text();
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+          return this.executeFlowTask(data, retryCount + 1, maxRetries);
+        }
+        return { status: 'error', err: new Error(errorText) };
+      }
 
-    if (flow.errors?.length) {
+      const flow: TwitterUserAuthFlowResponse = await res.json();
+      
+      if (flow?.flow_token == null || typeof flow.flow_token !== 'string') {
+        return { status: 'error', err: new Error('Invalid flow token') };
+      }
+
+      if (flow.errors?.length) {
+        const error = flow.errors[0];
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+          return this.executeFlowTask(data, retryCount + 1, maxRetries);
+        }
+        return {
+          status: 'error',
+          err: new Error(`Authentication error (${error.code}): ${error.message}`),
+        };
+      }
+
+      const subtask = flow.subtasks?.length ? flow.subtasks[0] : undefined;
+      Check(TwitterUserAuthSubtask, subtask);
+
+      if (subtask?.subtask_id === 'DenyLoginSubtask' && retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+        return this.executeFlowTask(data, retryCount + 1, maxRetries);
+      }
+
       return {
-        status: 'error',
-        err: new Error(
-          `Authentication error (${flow.errors[0].code}): ${flow.errors[0].message}`,
-        ),
+        status: 'success',
+        subtask,
+        flowToken: flow.flow_token,
+      };
+    } catch (error) {
+      if (retryCount < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+        return this.executeFlowTask(data, retryCount + 1, maxRetries);
+      }
+      return { 
+        status: 'error', 
+        err: error instanceof Error ? error : new Error(String(error))
       };
     }
-
-    if (typeof flow.flow_token !== 'string') {
-      return {
-        status: 'error',
-        err: new Error('flow_token was not a string.'),
-      };
-    }
-
-    const subtask = flow.subtasks?.length ? flow.subtasks[0] : undefined;
-    Check(TwitterUserAuthSubtask, subtask);
-
-    if (subtask && subtask.subtask_id === 'DenyLoginSubtask') {
-      return {
-        status: 'error',
-        err: new Error('Authentication error: DenyLoginSubtask'),
-      };
-    }
-
-    return {
-      status: 'success',
-      subtask,
-      flowToken: flow.flow_token,
-    };
   }
 }
