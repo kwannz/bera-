@@ -58,71 +58,26 @@ class TwitterClient:
         return encoded_signature
         
     async def authenticate(self) -> bool:
-        """Authenticate with Twitter API using OAuth 1.0a"""
+        """Authenticate with Twitter API v2"""
         try:
-            # Step 1: Get request token
-            # Verify API key is present
-            if not self.api_key or not self.api_secret:
-                self.logger.error("Missing API key or secret")
+            if not self.bearer_token:
+                self.logger.error("Missing bearer token")
                 return False
                 
-            # Prepare OAuth parameters
-            nonce = str(uuid.uuid4()).replace('-', '')
-            timestamp = str(int(time.time()))
-            
-            oauth_params = {
-                "oauth_callback": "oob",
-                "oauth_consumer_key": self.api_key,
-                "oauth_nonce": nonce,
-                "oauth_signature_method": "HMAC-SHA1",
-                "oauth_timestamp": timestamp,
-                "oauth_version": "1.0"
-            }
-            
-            # Log OAuth parameters for debugging (excluding sensitive data)
-            self.logger.debug(f"OAuth params: nonce={nonce}, timestamp={timestamp}")
-            
-            # Generate OAuth signature
-            url = "https://api.twitter.com/oauth/request_token"
-            oauth_params["oauth_signature"] = self._generate_oauth_signature(
-                "POST", url, oauth_params
-            )
-            
-            # Format OAuth header according to Twitter API spec
-            auth_header = "OAuth " + ", ".join([
-                f'{quote(k, safe="")}="{quote(str(v), safe="")}"'
-                for k, v in sorted(oauth_params.items())
-            ])
-            
+            # Test authentication with a simple API call
+            url = "https://api.twitter.com/2/users/me"
             async with aiohttp.ClientSession() as session:
-                async with session.post(
+                async with session.get(
                     url,
-                    headers={"Authorization": auth_header}
+                    headers={"Authorization": f"Bearer {self.bearer_token}"}
                 ) as response:
-                    response_text = await response.text()
+                    response_json = await response.json()
                     if response.status != 200:
-                        self.logger.error(f"OAuth error: {response.status}, Response: {response_text}")
-                        self.logger.error(f"Request headers: {auth_header}")
+                        self.logger.error(f"Authentication error: {response.status}")
+                        self.logger.error(f"Response details: {response_json}")
                         return False
                         
-                    try:
-                        params = dict(p.split("=") for p in response_text.split("&"))
-                        self.oauth_token = params.get("oauth_token")
-                        self.oauth_token_secret = params.get("oauth_token_secret")
-                        
-                        if not self.oauth_token or not self.oauth_token_secret:
-                            self.logger.error(f"Missing tokens in response: {response_text}")
-                            return False
-                            
-                        self.logger.info("Successfully obtained OAuth tokens")
-                    except Exception as e:
-                        self.logger.error(f"Failed to parse response: {response_text}, Error: {str(e)}")
-                        return False
-                    
-                    if not self.oauth_token or not self.oauth_token_secret:
-                        self.logger.error("Missing OAuth tokens in response")
-                        return False
-                        
+                    self.logger.info("Successfully authenticated with Twitter API v2")
                     return True
                     
         except Exception as e:
@@ -130,39 +85,18 @@ class TwitterClient:
             return False
             
     async def post_tweet(self, message: str) -> Optional[Dict]:
-        """Post a tweet using OAuth 1.0a"""
+        """Post a tweet using Twitter API v2"""
         try:
-            if not self.oauth_token or not self.oauth_token_secret:
+            if not self.bearer_token:
                 if not await self.authenticate():
                     return None
                     
             url = "https://api.twitter.com/2/tweets"
-            oauth_params = {
-                "oauth_consumer_key": self.api_key,
-                "oauth_nonce": str(uuid.uuid4()),
-                "oauth_signature_method": "HMAC-SHA1",
-                "oauth_timestamp": str(int(time.time())),
-                "oauth_token": self.oauth_token,
-                "oauth_version": "1.0"
-            }
-            
-            # Add message to params for signature
-            params = {**oauth_params, "text": message}
-            
-            oauth_params["oauth_signature"] = self._generate_oauth_signature(
-                "POST", url, params
-            )
-            
-            auth_header = "OAuth " + ", ".join([
-                f'{quote(k)}="{quote(str(v))}"'
-                for k, v in oauth_params.items()
-            ])
-            
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     url,
                     headers={
-                        "Authorization": auth_header,
+                        "Authorization": f"Bearer {self.bearer_token}",
                         "Content-Type": "application/json"
                     },
                     json={"text": message}
