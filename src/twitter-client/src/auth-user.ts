@@ -106,11 +106,21 @@ export class TwitterUserAuth extends TwitterGuestAuth {
     appSecret?: string,
     accessToken?: string,
     accessSecret?: string,
+    retryCount: number = 0
   ): Promise<void> {
     if (!username || !password || !email) {
       throw new Error('TWITTER_USERNAME, TWITTER_PASSWORD, and TWITTER_EMAIL must be defined');
     }
-    await this.updateGuestToken();
+
+    try {
+      await this.updateGuestToken();
+    } catch (error) {
+      if (retryCount < 3) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return this.login(username, password, email, twoFactorSecret, appKey, appSecret, accessToken, accessSecret, retryCount + 1);
+      }
+      throw error;
+    }
 
     let next = await this.initLogin();
     while ('subtask' in next && next.subtask) {
@@ -367,12 +377,21 @@ export class TwitterUserAuth extends TwitterGuestAuth {
       authorization: `Bearer ${this.bearerToken}`,
       cookie: await this.getCookieString(),
       'content-type': 'application/json',
-      'User-Agent':
-        'Mozilla/5.0 (Linux; Android 11; Nokia G20) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.88 Mobile Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'x-guest-token': token,
       'x-twitter-auth-type': 'OAuth2Client',
       'x-twitter-active-user': 'yes',
       'x-twitter-client-language': 'en',
+      'accept': '*/*',
+      'accept-language': 'en-US,en;q=0.9',
+      'origin': 'https://twitter.com',
+      'referer': 'https://twitter.com/',
+      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-site'
     });
     await this.installCsrfToken(headers);
 
