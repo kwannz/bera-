@@ -185,32 +185,20 @@ class PriceTracker:
                             self.metrics.end_request("beratrail")
                             return price_data
 
-                        self.logger.error(
-                            "Invalid response format from BeraTrail API",
-                            extra={
-                                "category": DebugCategory.API.value,
-                                "response": str(data)
-                            }
+                        return await self._handle_api_error(
+                            ValueError("Invalid response format"),
+                            "BeraTrail",
+                            str(data)
                         )
-                        self.metrics.record_error("beratrail")
-                        return {"error": "Invalid response format"}
                     else:
-                        self.logger.error(
-                            f"BeraTrail API error: HTTP {response.status}",
-                            extra={
-                                "category": DebugCategory.API.value,
-                                "response": await response.text()
-                            }
+                        response_text = await response.text()
+                        return await self._handle_api_error(
+                            Exception(f"HTTP {response.status}"),
+                            "BeraTrail",
+                            response_text
                         )
-                        self.metrics.record_error("beratrail")
-                        return {"error": f"HTTP {response.status}"}
         except Exception as e:
-            self.logger.error(
-                f"BeraTrail API error: {str(e)}",
-                extra={"category": DebugCategory.API.value}
-            )
-            self.metrics.record_error("beratrail")
-            return {"error": str(e)}
+            return await self._handle_api_error(e, "BeraTrail")
 
     async def _fetch_coingecko_price(self) -> Dict[str, Any]:
         """从CoinGecko API获取价格数据作为备用"""
@@ -244,32 +232,41 @@ class PriceTracker:
                             self.metrics.end_request("coingecko")
                             return price_data
 
-                        self.logger.error(
-                            "Invalid response format from CoinGecko API",
-                            extra={
-                                "category": DebugCategory.API.value,
-                                "response": str(data)
-                            }
+                        return await self._handle_api_error(
+                            ValueError("Invalid response format"),
+                            "CoinGecko",
+                            str(data)
                         )
-                        self.metrics.record_error("coingecko")
-                        return {"error": "Invalid response format"}
                     else:
-                        self.logger.error(
-                            f"CoinGecko API error: HTTP {response.status}",
-                            extra={
-                                "category": DebugCategory.API.value,
-                                "response": await response.text()
-                            }
+                        response_text = await response.text()
+                        return await self._handle_api_error(
+                            Exception(f"HTTP {response.status}"),
+                            "CoinGecko",
+                            response_text
                         )
-                        self.metrics.record_error("coingecko")
-                        return {"error": f"HTTP {response.status}"}
         except Exception as e:
-            self.logger.error(
-                f"CoinGecko API error: {str(e)}",
-                extra={"category": DebugCategory.API.value}
-            )
-            self.metrics.record_error("coingecko")
-            return {"error": str(e)}
+            return await self._handle_api_error(e, "CoinGecko")
+
+    async def _handle_api_error(
+        self,
+        error: Exception,
+        api_name: str,
+        response_text: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """统一处理API错误"""
+        error_msg = str(error)
+        if response_text:
+            error_msg = f"{error_msg} - Response: {response_text}"
+            
+        self.logger.error(
+            f"{api_name} API error: {error_msg}",
+            extra={
+                "category": DebugCategory.API.value,
+                "api": api_name
+            }
+        )
+        self.metrics.record_error(f"price_tracker_{api_name.lower()}")
+        return {"error": error_msg}
 
     async def _fetch_okx_price(self) -> Dict[str, Any]:
         """从OKX API获取价格数据作为第二备用"""
@@ -300,32 +297,20 @@ class PriceTracker:
                             self.metrics.end_request("okx")
                             return price_data
 
-                        self.logger.error(
-                            "Invalid response format from OKX API",
-                            extra={
-                                "category": DebugCategory.API.value,
-                                "response": str(data)
-                            }
+                        return await self._handle_api_error(
+                            ValueError("Invalid response format"),
+                            "OKX",
+                            str(data)
                         )
-                        self.metrics.record_error("okx")
-                        return {"error": "Invalid response format"}
                     else:
-                        self.logger.error(
-                            f"OKX API error: HTTP {response.status}",
-                            extra={
-                                "category": DebugCategory.API.value,
-                                "response": await response.text()
-                            }
+                        response_text = await response.text()
+                        return await self._handle_api_error(
+                            Exception(f"HTTP {response.status}"),
+                            "OKX",
+                            response_text
                         )
-                        self.metrics.record_error("okx")
-                        return {"error": f"HTTP {response.status}"}
         except Exception as e:
-            self.logger.error(
-                f"OKX API error: {str(e)}",
-                extra={"category": DebugCategory.API.value}
-            )
-            self.metrics.record_error("okx")
-            return {"error": str(e)}
+            return await self._handle_api_error(e, "OKX")
 
     async def _cache_price_data(self, price_data: Dict[str, Any]) -> None:
         """缓存价格数据到Redis"""
