@@ -28,11 +28,11 @@ class ResponseFormatter:
     def _apply_market_template(data: Dict[str, Any]) -> str:
         """使用PRICE_UPDATE_TEMPLATE模板"""
         if "error" in data:
-            return f"❌ 错误：{data['error']}"
+            return data["error"]
         return (
-            f"📈 当前价格：${data['price']}\n"
-            f"💰 24小时交易量：${data['volume']}\n"
-            f"📊 价格变动：{data['change']}%"
+            f"📈 当前价格：${data.get('price', '0.00')}\n"
+            f"💰 24小时交易量：${data.get('volume', '0')}\n"
+            f"📊 价格变动：{data.get('change', '0')}%"
         )
 
     @staticmethod
@@ -40,14 +40,15 @@ class ResponseFormatter:
         data: Union[Dict[str, Any], List[Dict[str, Any]]]
     ) -> str:
         """使用NEWS_UPDATE_TEMPLATE模板"""
-        if isinstance(data, list):
+        if isinstance(data, list) and data:
             result = []
             for item in data:
-                result.append(
-                    f"📰 标题：{item['title']}\n"
-                    f"🔍 来源：{item['source']}\n"
-                    f"⏰ 时间：{item['date']}\n"
-                    f"{item['summary']}\n"
-                )
-            return "\n".join(result)
-        return str(data)
+                if isinstance(item, dict):
+                    result.append(
+                        f"📰 标题：{item.get('title', '')}\n"
+                        f"🔍 来源：{item.get('source', '')}\n"
+                        f"⏰ 时间：{item.get('date', '')}\n"
+                        f"{item.get('summary', '')}\n"
+                    )
+            return "\n".join(result) if result else ""
+        return ""
