@@ -1,31 +1,28 @@
-# Berachain Twitter Bot
+# Berachain Ecosystem Monitor
 
-A TypeScript-based Twitter bot for tracking and sharing information about the Berachain ecosystem.
+A monitoring system for tracking and analyzing information about the Berachain ecosystem.
 
 ## Features
 - Real-time BERA token price and volume tracking
 - Automated news monitoring and updates
 - IDO tracking and announcements
-- AI-powered responses using Ollama (deepseek-r1:1.5b)
-- Rate-limited Twitter interactions
-- TypeScript type safety
+- AI-powered analysis using Ollama (deepseek-r1:1.5b)
 
 ## Prerequisites
-- Node.js 18+ and npm/yarn
+- Python 3.8+
 - Ollama with deepseek-r1:1.5b model
-- Twitter API credentials
 
 ## Installation
 
 1. Clone the repository:
 ```bash
 git clone https://github.com/kwannz/bera-.git
-cd bera-/src/twitter-client
+cd bera-
 ```
 
 2. Install dependencies:
 ```bash
-npm install
+pip install -r requirements.txt
 ```
 
 3. Configure environment variables:
@@ -33,70 +30,92 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` with your Twitter API credentials:
+Edit `.env` with your configuration:
 ```
-TWITTER_API_KEY=your_api_key
-TWITTER_API_SECRET=your_api_secret
-TWITTER_BEARER_TOKEN=your_bearer_token
+OPENAI_API_KEY=your_openai_key
 OLLAMA_URL=http://localhost:11434
 ```
 
 ## Usage
 
-1. Start the bot:
+1. Start the monitor:
 ```bash
-npm run build
-npm start
+python src/main.py
 ```
 
 2. Run tests:
 ```bash
-npm test
+python -m pytest tests/
 ```
 
 ## Configuration
 
-The bot can be configured through environment variables:
-- `TWITTER_API_KEY`: Your Twitter API key
-- `TWITTER_API_SECRET`: Your Twitter API secret
-- `TWITTER_BEARER_TOKEN`: Your Twitter bearer token
+The monitor can be configured through environment variables:
+- `OPENAI_API_KEY`: Your OpenAI API key (optional)
 - `OLLAMA_URL`: URL for Ollama API (default: http://localhost:11434)
 
 ## Features
 
 ### Price Updates
-The bot automatically tracks and posts BERA token metrics:
-```typescript
-🐻 BERA: $8.5 | Volume: $10B | +10% 24h
-```
+The monitor tracks BERA token metrics:
+- Real-time price data
+- Trading volume analysis
+- 24-hour price changes
+- Market trend indicators
 
 ### News Monitoring
-Monitors and reports Berachain ecosystem updates from BeraHome.
+Monitors and analyzes Berachain ecosystem updates:
+- BeraHome platform news
+- Ecosystem developments
+- IDO announcements and tracking
+- Project updates
 
 ### AI Integration
-Uses Ollama with deepseek-r1:1.5b for generating context-aware responses.
+Uses Ollama with deepseek-r1:1.5b for:
+- Market analysis
+- News summarization
+- Trend identification
+- Impact assessment
 
 ## Development
 
-1. Build TypeScript:
+1. Run tests:
 ```bash
-npm run build
+python -m pytest tests/
 ```
 
-2. Run tests:
+2. Check code style:
 ```bash
-npm test
+flake8 src/ tests/
 ```
 
-3. Format code:
+3. Type checking:
 ```bash
-npm run format
+mypy src/
 ```
 
-4. Lint code:
-```bash
-npm run lint
+## Project Structure
+
 ```
+src/
+├── ai_response/        # AI analysis using Ollama
+├── news_monitoring/    # BeraHome ecosystem news scraping
+├── price_tracking/     # BERA token price and volume tracking
+├── token_analytics/    # Token validation and analytics
+└── utils/             # Shared utilities and logging
+
+tests/                 # Test suite
+docs/                  # Documentation
+```
+
+## Contributing
+1. Fork the repository
+2. Create your feature branch
+3. Run tests and ensure code quality
+4. Submit a pull request
+
+## License
+MIT License```
 
 ## Prerequisites
 

@@ -11,41 +11,20 @@ class ModelType(Enum):
     OLLAMA = "ollama"
 
 class ContentType(Enum):
-    TWEET = "tweet"
-    REPLY = "reply"
-    NEWS = "news"
     MARKET = "market"
+    NEWS = "news"
 
 PROMPT_TEMPLATES = {
-    ContentType.TWEET: """Generate an engaging tweet about {topic} in the Berachain ecosystem.
-Focus on: {focus}
-Key points: {points}
-Style: Professional yet friendly, using bear-themed elements sparingly.""",
-    
-    ContentType.REPLY: """Generate a helpful reply to a user query about Berachain.
-Query: {query}
-Context: {context}
-Style: Friendly and informative, using bear-themed elements when appropriate.
-
-Guidelines:
-1. For price queries: Include current price, volume, and market sentiment
-2. For IDO queries: List upcoming IDOs with dates and status
-3. For news queries: Summarize latest updates and their impact
-4. For technical queries: Provide clear explanations with documentation links
-5. Always maintain a helpful and enthusiastic tone
-6. Use bear-themed elements (🐻, 🐼) sparingly
-7. Keep responses under 280 characters""",
-    
-    ContentType.NEWS: """Generate a tweet about recent Berachain news.
-News: {news}
-Impact: {impact}
-Style: Enthusiastic and informative, highlighting ecosystem growth.""",
-    
-    ContentType.MARKET: """Generate a market update tweet for BERA token.
+    ContentType.MARKET: """Generate a market update for BERA token.
 Price: {price}
 Volume: {volume}
-Change: {change}
-Style: Professional with market insights, using bear-themed elements."""
+24h Change: {change}%
+Style: Professional and informative.""",
+
+    ContentType.NEWS: """Generate a news update about recent Berachain developments.
+News: {news}
+Impact: {impact}
+Style: Professional and informative."""
 }
 
 class AIModelManager:

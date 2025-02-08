@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from .logging_config import get_logger, DebugCategory
-from .error_handler import RateLimitError, TwitterError
+from .errors import RateLimitError
 
 @dataclass
 class RateLimit:
