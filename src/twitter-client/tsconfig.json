@@ -9,6 +9,8 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "sourceMap": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "declaration": true,
     "declarationMap": true,
     "declarationDir": "./dist",
