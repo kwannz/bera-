@@ -11,7 +11,7 @@ describe('TwitterClient', () => {
   beforeEach(() => {
     const mockApi = {
       v2: {
-        tweet: jest.fn<(...args: any[]) => Promise<TweetV2PostTweetResult>>().mockResolvedValue({
+        tweet: jest.fn().mockImplementation(() => Promise.resolve({
           data: {
             id: '123',
             text: 'Test tweet',
