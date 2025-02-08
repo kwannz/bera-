@@ -25,7 +25,7 @@ class PriceTracker:
         self.api_key = os.getenv("BERATRAIL_API_KEY")
         self.api_url = os.getenv(
             "BERATRAIL_API_URL",
-            "https://api.beratrail.io/v1"  # Default API URL
+            "https://beratrail.io/api/v1"  # Default API URL
         )
         
         # OKX API configuration
@@ -38,17 +38,10 @@ class PriceTracker:
         self.logger = get_logger(__name__)
         self._initialized = False
         
-        # Validate required configuration
-        missing_vars = []
-        if not self.api_key:
-            missing_vars.append("BERATRAIL_API_KEY")
+        # BeraTrail API can be used without API key in free tier
         if not self.api_url:
-            missing_vars.append("BERATRAIL_API_URL")
-            
-        if missing_vars:
-            self.logger.error(
-                "Missing required environment variables: " +
-                ", ".join(missing_vars),
+            self.logger.warning(
+                "BERATRAIL_API_URL not set, using default",
                 extra={"category": DebugCategory.CONFIG.value}
             )
 
@@ -164,11 +157,10 @@ class PriceTracker:
 
     async def _fetch_beratrail_price(self) -> Dict[str, Any]:
         """从BeraTrail API获取价格数据"""
-        url = f"{self.api_url}/tokens/bera"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
+        url = f"{self.api_url}/tokens/bera/price"
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         self.metrics.start_request("beratrail")
         try:

@@ -40,9 +40,7 @@ class ContentType(Enum):
 
 PROMPT_TEMPLATES = {
     ContentType.MARKET: """生成BERA代币市场更新：
-当前价格: {price} USD
-24小时交易量: {volume} USD
-价格变动: {change}%
+{market_data}
 分析风格：专业、信息丰富""",
 
     ContentType.NEWS: """生成Berachain最新动态：
@@ -129,7 +127,7 @@ class AIModelManager:
         self.logger = logger  # Use the module-level logger
         self.model_type = ModelType.OLLAMA
         self.ollama_url = ollama_url or os.getenv(
-            "OLLAMA_URL",
+            "OLLAMA_API_URL",
             "http://localhost:11434"
         )
         self._initialized = False
@@ -154,8 +152,41 @@ class AIModelManager:
         retries: int = MAX_RETRIES
     ) -> Optional[str]:
         try:
-            prompt = PROMPT_TEMPLATES[content_type].format(**params)
-            
+            # Format the prompt based on content type and available data
+            prompt_data = {}
+            if content_type == ContentType.MARKET:
+                prompt_data["market_data"] = params.get("market_data", "无可用数据")
+            elif content_type == ContentType.NEWS:
+                news_list = params.get("news", [])
+                news_text = "\n".join([
+                    f"- {item.get('title', '')}: {item.get('summary', '')}"
+                    for item in news_list
+                ]) if news_list else "无可用新闻"
+                prompt_data["news"] = news_text
+            else:
+                prompt_data = params
+
+            # Add user message and context to prompt
+            message = params.get("message", "")
+            context = params.get("context", [])
+            context_text = "\n".join([
+                f"{msg['role']}: {msg['content']}"
+                for msg in context[-2:]  # Only use last 2 messages
+            ]) if context else ""
+
+            # Create final prompt
+            prompt = f"""你是一个专业的加密货币分析师，请基于以下信息回答用户问题。直接给出答案，不要输出思考过程。
+
+用户问题：{message}
+
+历史对话：
+{context_text}
+
+相关数据：
+{PROMPT_TEMPLATES[content_type].format(**prompt_data)}
+
+请直接提供专业、详细的回答，不要包含<think>标签或思考过程。"""
+
             self.logger.debug(
                 f"Generating {content_type.value} content",
                 extra={"category": DebugCategory.API.value}
@@ -201,7 +232,7 @@ class AIModelManager:
             # Prepare payload for Ollama API
             payload = {
                 "model": model,
-                "messages": [{"role": "user", "content": prompt}],
+                "prompt": prompt,
                 "stream": False,
                 "options": {
                     "temperature": temp,
@@ -209,6 +240,14 @@ class AIModelManager:
                     "stop": ["</s>", "\n\n"]
                 }
             }
+            
+            self.logger.debug(
+                f"Using model: {model} with prompt: {prompt[:100]}...",
+                extra={
+                    "category": DebugCategory.API.value,
+                    "prompt_length": len(prompt)
+                }
+            )
             
             self.logger.debug(
                 "Sending request to Ollama API",
@@ -222,7 +261,7 @@ class AIModelManager:
             
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"{self.ollama_url}/api/chat",
+                    f"{self.ollama_url}/api/generate",
                     json=payload,
                     timeout=ClientTimeout(total=10.0)  # 10 second timeout
                 ) as response:
@@ -233,6 +272,11 @@ class AIModelManager:
                                     "response" in result and
                                     isinstance(result["response"], str)):
                                 return result["response"][:max_length]
+                            elif (isinstance(result, dict) and
+                                  "message" in result and
+                                  isinstance(result["message"], dict) and
+                                  "content" in result["message"]):
+                                return result["message"]["content"][:max_length]
                             else:
                                 self.logger.error(
                                     "Invalid response format from Ollama API",
