@@ -1,5 +1,103 @@
 # Berachain Twitter Bot
 
+A TypeScript-based Twitter bot for tracking and sharing information about the Berachain ecosystem.
+
+## Features
+- Real-time BERA token price and volume tracking
+- Automated news monitoring and updates
+- IDO tracking and announcements
+- AI-powered responses using Ollama (deepseek-r1:1.5b)
+- Rate-limited Twitter interactions
+- TypeScript type safety
+
+## Prerequisites
+- Node.js 18+ and npm/yarn
+- Ollama with deepseek-r1:1.5b model
+- Twitter API credentials
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/kwannz/bera-.git
+cd bera-/src/twitter-client
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Configure environment variables:
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your Twitter API credentials:
+```
+TWITTER_API_KEY=your_api_key
+TWITTER_API_SECRET=your_api_secret
+TWITTER_BEARER_TOKEN=your_bearer_token
+OLLAMA_URL=http://localhost:11434
+```
+
+## Usage
+
+1. Start the bot:
+```bash
+npm run build
+npm start
+```
+
+2. Run tests:
+```bash
+npm test
+```
+
+## Configuration
+
+The bot can be configured through environment variables:
+- `TWITTER_API_KEY`: Your Twitter API key
+- `TWITTER_API_SECRET`: Your Twitter API secret
+- `TWITTER_BEARER_TOKEN`: Your Twitter bearer token
+- `OLLAMA_URL`: URL for Ollama API (default: http://localhost:11434)
+
+## Features
+
+### Price Updates
+The bot automatically tracks and posts BERA token metrics:
+```typescript
+🐻 BERA: $8.5 | Volume: $10B | +10% 24h
+```
+
+### News Monitoring
+Monitors and reports Berachain ecosystem updates from BeraHome.
+
+### AI Integration
+Uses Ollama with deepseek-r1:1.5b for generating context-aware responses.
+
+## Development
+
+1. Build TypeScript:
+```bash
+npm run build
+```
+
+2. Run tests:
+```bash
+npm test
+```
+
+3. Format code:
+```bash
+npm run format
+```
+
+4. Lint code:
+```bash
+npm run lint
+```
+
 ## Prerequisites
 
 - Python 3.12+
