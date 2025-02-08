@@ -3,6 +3,7 @@ import asyncio
 from typing import AsyncGenerator
 import pytest
 import redis.asyncio
+import websockets
 
 from src.ai_response.model_manager import AIModelManager
 from src.chat_interface.handlers.api_handler import ChatHandler
@@ -11,9 +12,11 @@ from src.chat_interface.services.context_service import ContextManager
 from src.chat_interface.services.news_monitor import NewsMonitor
 from src.chat_interface.services.price_tracker import PriceTracker
 from src.chat_interface.services.response_formatter import ResponseFormatter
+from src.chat_interface.services.price_websocket import BinanceWebSocket
 from src.chat_interface.utils.circuit_breaker import CircuitBreaker
 from src.chat_interface.utils.metrics import Metrics
 from src.chat_interface.utils.rate_limiter import RateLimiter
+from .services.mock_websocket import MockWebSocket
 
 
 @pytest.fixture(scope="function")
