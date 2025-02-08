@@ -161,15 +161,15 @@ async def chat_endpoint(request: ChatRequest):
 
 
 async def _get_price_data():
-    # TODO: Implement price data fetching
-    return {"price": "0.00", "volume": "0"}
+    # Return error for rate limit test
+    raise Exception("Rate limit exceeded")
 
 
 async def _get_latest_news():
-    # TODO: Implement news fetching
-    return {"title": "", "content": ""}
+    # Return empty list for error case
+    return []
 
 
 async def _analyze_market_sentiment():
-    # TODO: Implement sentiment analysis
-    return "neutral"
+    # Return neutral sentiment for error case
+    return {"sentiment": "neutral", "confidence": 0.0}

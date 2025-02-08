@@ -2,9 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 
-from src.chat_interface.handlers.api_handler import (
-    app, MarketData, NewsItem, SentimentData
-)
+from src.chat_interface.handlers.api_handler import app
 
 client = TestClient(app)
 
@@ -20,15 +18,13 @@ async def test_full_chat_flow():
             "usd_24h_change": "5.67"
         }
     }
-    news_data = [
-        NewsItem(
-            title="Test News",
-            summary="Test Content",
-            date="2024-01-01",
-            source="BeraHome"
-        )
-    ]
-    sentiment_data = SentimentData(
+    news_data = [dict(
+        title="Test News",
+        summary="Test Content",
+        date="2024-01-01",
+        source="BeraHome"
+    )]
+    sentiment_data = dict(
         sentiment="positive",
         confidence=0.8
     )
