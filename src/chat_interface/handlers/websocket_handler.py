@@ -8,16 +8,27 @@ from src.ai_response.model_manager import (
     AIModelManager,
     ContentType as ModelContentType
 )
-from src.ai_response.generator import ResponseGenerator
 from ..services.response_formatter import ContentType as FormatterContentType
 
 
 class WebSocketHandler:
-    def __init__(self):
-        self.context_manager = ContextManager()
-        self.response_formatter = ResponseFormatter()
-        self.model_manager = AIModelManager()
-        self.response_generator = ResponseGenerator()
+    def __init__(
+        self,
+        rate_limiter,
+        context_manager: ContextManager,
+        price_tracker,
+        news_monitor,
+        analytics_collector,
+        model_manager: AIModelManager,
+        response_formatter: ResponseFormatter
+    ):
+        self.rate_limiter = rate_limiter
+        self.context_manager = context_manager
+        self.price_tracker = price_tracker
+        self.news_monitor = news_monitor
+        self.analytics_collector = analytics_collector
+        self.model_manager = model_manager
+        self.response_formatter = response_formatter
 
     async def handle_connection(self, websocket):
         session_id = None
@@ -134,18 +145,13 @@ class WebSocketHandler:
             return {"error": str(e)}
 
     async def _get_price_data(self):
-        # Simulate rate limit error for tests
-        raise Exception("Rate limit exceeded")
+        """Get price data from price tracker service"""
+        return await self.price_tracker.get_price_data()
 
     async def _get_latest_news(self):
-        # Return test news data
-        return [{
-            "title": "Test News",
-            "summary": "Test Content",
-            "date": "2024-01-01",
-            "source": "BeraHome"
-        }]
+        """Get latest news from news monitor service"""
+        return await self.news_monitor.get_latest_news()
 
     async def _analyze_market_sentiment(self):
-        # Return test sentiment data
-        return {"sentiment": "positive", "confidence": 0.8}
+        """Get market sentiment from analytics collector service"""
+        return await self.analytics_collector.analyze_market_sentiment()
