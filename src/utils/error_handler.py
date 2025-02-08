@@ -1,30 +1,9 @@
-from enum import Enum, auto
 from typing import Optional, Tuple
 from .logging_config import get_logger, DebugCategory
 from .rate_limiter import RateLimitStrategy, RateLimit
+from .errors import RetryAction, RateLimitError, NetworkError, AuthenticationError
 
-class RetryAction(Enum):
-    RETRY_IMMEDIATELY = auto()
-    WAIT_AND_RETRY = auto()
-    ABORT = auto()
-
-class TwitterError(Exception):
-    """Base class for Twitter-related errors"""
-    pass
-
-class RateLimitError(TwitterError):
-    """Raised when rate limits are hit"""
-    pass
-
-class NetworkError(TwitterError):
-    """Raised when network issues occur"""
-    pass
-
-class AuthenticationError(TwitterError):
-    """Raised when authentication fails"""
-    pass
-
-class TwitterErrorHandler:
+class ErrorHandler:
     def __init__(self, rate_limit_strategy: RateLimitStrategy):
         self.rate_limit_strategy = rate_limit_strategy
         self.logger = get_logger(__name__)

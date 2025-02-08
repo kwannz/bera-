@@ -1,15 +1,11 @@
 import pytest
-from src.utils.error_handler import (
-    ErrorHandler,
-    RetryAction,
-    RateLimitError,
-    NetworkError,
-    AuthenticationError
-)
+from src.utils.errors import RetryAction, RateLimitError, NetworkError, AuthenticationError
+from src.utils.error_handler import ErrorHandler
+from src.utils.rate_limiter import RateLimitStrategy
 
 @pytest.fixture
 def error_handler():
-    return ErrorHandler()
+    return ErrorHandler(RateLimitStrategy())
 
 async def test_rate_limit_error(error_handler):
     """Test handling of rate limit errors"""
