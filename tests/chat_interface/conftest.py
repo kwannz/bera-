@@ -17,15 +17,12 @@ from src.chat_interface.utils.rate_limiter import RateLimiter
 
 
 @pytest.fixture(scope="function")
-async def event_loop():
+def event_loop():
     """Create an event loop for testing"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        yield loop
-    finally:
-        loop.close()
-        asyncio.set_event_loop(None)
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
+    yield loop
+    loop.close()
 
 
 @pytest.fixture(scope="function")
