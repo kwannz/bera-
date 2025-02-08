@@ -32,6 +32,10 @@ class NewsMonitor:
 
         # Initialize Redis indices for articles
         try:
+            # Ensure rate_limiter is initialized
+            if not hasattr(self.rate_limiter, '_redis_client'):
+                await self.rate_limiter.initialize()
+            # Clear indices
             await self.rate_limiter.redis_client.delete("bera_articles:index")
         except Exception as e:
             self.logger.error(

@@ -32,6 +32,10 @@ class AnalyticsCollector:
             return
         # Clear any existing cache
         try:
+            # Ensure rate_limiter is initialized
+            if not hasattr(self.rate_limiter, '_redis_client'):
+                await self.rate_limiter.initialize()
+            # Clear cache
             await self.rate_limiter.redis_client.delete("bera_sentiment")
         except Exception as e:
             self.logger.error(
