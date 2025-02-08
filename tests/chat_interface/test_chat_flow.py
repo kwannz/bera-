@@ -2,7 +2,9 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 
-from src.chat_interface.handlers.api_handler import app
+from src.chat_interface.handlers.api_handler import (
+    app, MarketData, NewsItem, SentimentData
+)
 
 client = TestClient(app)
 
@@ -13,24 +15,23 @@ async def test_full_chat_flow():
     # Mock external service responses
     price_data = {
         "berachain": {
-            "usd": 1.23,
-            "usd_24h_vol": 1000000,
-            "usd_24h_change": 5.67
+            "usd": "1.23",
+            "usd_24h_vol": "1000000",
+            "usd_24h_change": "5.67"
         }
     }
     news_data = [
-        {
-            "title": "Test News",
-            "summary": "Test Content",
-            "date": "2024-01-01",
-            "source": "BeraHome"
-        }
+        NewsItem(
+            title="Test News",
+            summary="Test Content",
+            date="2024-01-01",
+            source="BeraHome"
+        )
     ]
-    sentiment_data = {
-        "sentiment": "positive",
-        "confidence": 0.8,
-        "timestamp": "now"
-    }
+    sentiment_data = SentimentData(
+        sentiment="positive",
+        confidence=0.8
+    )
 
     price_patch = (
         'src.chat_interface.services.price_tracker'

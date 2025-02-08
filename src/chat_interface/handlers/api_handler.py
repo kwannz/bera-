@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Any
 import asyncio
 
 from ..services.context_service import ContextManager
@@ -11,6 +11,29 @@ from src.ai_response.model_manager import (
 )
 from src.ai_response.generator import ResponseGenerator
 from ..services.response_formatter import ContentType as FormatterContentType
+from typing_extensions import TypedDict
+
+
+class MarketData(TypedDict, total=False):
+    price: str
+    volume: str
+    change: str
+    error: str
+
+
+class NewsItem(TypedDict):
+    title: str
+    summary: str
+    date: str
+    source: str
+
+
+NewsData = List[NewsItem]
+
+
+class SentimentData(TypedDict):
+    sentiment: str
+    confidence: float
 
 
 app = FastAPI()
@@ -32,38 +55,81 @@ async def chat_endpoint(request: ChatRequest):
         # Get context for AI response
         context = await context_manager.get_context(request.session_id)
 
-        # Generate AI response
-        ai_response = await model_manager.generate_content(
-            ModelContentType.MARKET,
-            {"message": request.message, "context": context},
-            max_length=280
-        )
-
-        # Get additional data in parallel
-        data_tasks = [
+        # Get data in parallel
+        tasks = [
+            model_manager.generate_content(
+                ModelContentType.MARKET,
+                {"message": request.message, "context": context},
+                max_length=280
+            ),
             _get_price_data(),
             _get_latest_news(),
             _analyze_market_sentiment()
         ]
-        price_data, news_data, sentiment = await asyncio.gather(*data_tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        ai_response, price_data, news_data, sentiment = results
 
-        # Format response
-        market_data = {
-            "price": price_data["berachain"]["usd"],
-            "volume": price_data["berachain"]["usd_24h_vol"],
-            "change": price_data["berachain"]["usd_24h_change"]
+        # Format response with error handling
+        # Handle market data with proper error messages
+        market_data: Dict[str, str] = {"error": "Unexpected error"}
+        if not isinstance(price_data, Exception):
+            try:
+                if isinstance(price_data, dict):
+                    berachain_data = price_data.get("berachain", {})
+                    if isinstance(berachain_data, dict):
+                        market_data = {
+                            "price": str(
+                                berachain_data.get("usd", "0.00")
+                            ),
+                            "volume": str(
+                                berachain_data.get("usd_24h_vol", "0")
+                            ),
+                            "change": str(
+                                berachain_data.get("usd_24h_change", "0")
+                            )
+                        }
+            except (TypeError, AttributeError):
+                market_data = {"error": "Rate limit exceeded"}
+
+        # Prepare response data with proper types
+        news_list: List[Dict[str, str]] = []
+        if (not isinstance(news_data, Exception) and
+                isinstance(news_data, list)):
+            for item in news_data:
+                if isinstance(item, dict):
+                    news_list.append({
+                        "title": str(item.get("title", "")),
+                        "summary": str(item.get("summary", "")),
+                        "date": str(item.get("date", "")),
+                        "source": str(item.get("source", ""))
+                    })
+
+        sentiment_data: Dict[str, Any] = {
+            "sentiment": "neutral",
+            "confidence": 0.0
         }
+        if (not isinstance(sentiment, Exception) and
+                isinstance(sentiment, dict)):
+            sentiment_data = {
+                "sentiment": str(sentiment.get("sentiment", "neutral")),
+                "confidence": float(sentiment.get("confidence", 0.0))
+            }
+
         response = {
-            "ai_response": ai_response,
+            "ai_response": (
+                "Unable to generate response"
+                if isinstance(ai_response, Exception)
+                else str(ai_response)
+            ),
             "market_data": response_formatter.format_response(
                 market_data,
                 FormatterContentType.MARKET
             ),
             "news": response_formatter.format_response(
-                news_data,
+                news_list,
                 FormatterContentType.NEWS
             ),
-            "sentiment": sentiment
+            "sentiment": sentiment_data
         }
 
         # Update context
@@ -78,8 +144,14 @@ async def chat_endpoint(request: ChatRequest):
 
         return response
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        # Log the error but return a graceful response
+        return {
+            "ai_response": "Unable to process request",
+            "market_data": {"error": "Service unavailable"},
+            "news": [],
+            "sentiment": {"sentiment": "neutral"}
+        }
 
 
 async def _get_price_data():
