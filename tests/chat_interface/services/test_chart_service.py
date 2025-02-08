@@ -22,11 +22,14 @@ def test_widget_config_overrides():
         interval="1H",
         theme="light",
         studies=["RSI", "MACD"]
+
+        theme="light"
     )
     assert config["symbol"] == "BERABTC"
     assert config["interval"] == "1H"
     assert config["theme"] == "light"
     assert config["studies"] == ["RSI", "MACD"]
+
 
 
 def test_widget_html_generation():
@@ -38,6 +41,7 @@ def test_widget_html_generation():
     assert "tradingview_chart" in html
     assert "TradingView.widget" in html
     assert 'locale": "zh_CN"' in html  # Verify Chinese locale
+
 
 
 def test_widget_html_with_overrides():
@@ -53,6 +57,10 @@ def test_widget_html_with_overrides():
     assert "light" in html
     assert "RSI" in html
     assert "MACD" in html
+        theme="light"
+    )
+    assert "BERABTC" in html
+    assert "light" in html
 
 
 def test_chart_url_generation():
@@ -74,6 +82,8 @@ def test_chart_url_with_overrides():
         theme="light"
     )
     assert "BERABTC" in url
+
+    assert "BERA" in url
     assert "interval=1H" in url
     assert "theme=light" in url
 
