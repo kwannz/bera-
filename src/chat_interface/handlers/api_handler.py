@@ -75,7 +75,7 @@ async def chat_endpoint(request: ChatRequest):
 
         # Format response with error handling
         # Handle market data with proper error messages
-        market_data: Dict[str, str] = {"error": "Rate limit exceeded"}
+        market_data: Dict[str, str] = {"error": "Unexpected error"}
         if isinstance(price_data, Exception):
             if "Rate limit exceeded" in str(price_data):
                 market_data = {"error": "Rate limit exceeded"}
@@ -171,13 +171,16 @@ async def _get_price_data():
     # Simulate rate limit and error cases for tests
     if not await rate_limiter.check_rate_limit("price_tracker"):
         raise Exception("Rate limit exceeded")
-    return {
-        "berachain": {
-            "usd": "0.00",
-            "usd_24h_vol": "0",
-            "usd_24h_change": "0"
+    try:
+        return {
+            "berachain": {
+                "usd": "0.00",
+                "usd_24h_vol": "0",
+                "usd_24h_change": "0"
+            }
         }
-    }
+    except Exception:
+        raise Exception("Unexpected error")
 
 
 async def _get_latest_news():
