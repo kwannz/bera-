@@ -13,7 +13,7 @@ describe('BerachainMonitor', () => {
   beforeEach(async () => {
     const mockApi = {
       v2: {
-        tweet: jest.fn().mockImplementation(() => Promise.resolve({
+        tweet: (jest.fn() as jest.MockedFunction<() => Promise<TweetV2PostTweetResult>>).mockResolvedValue({
           data: {
             id: '123',
             text: 'Test tweet',
