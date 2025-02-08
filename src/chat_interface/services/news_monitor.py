@@ -43,8 +43,11 @@ class NewsMonitor:
                 extra={"category": DebugCategory.CACHE.value}
             )
         self._initialized = True
-        # 24 hours default
-        self.cache_ttl = int(os.getenv("NEWS_CACHE_TTL", "86400"))
+        # 30 minutes default for news cache
+        self.cache_ttl = int(os.getenv("NEWS_CACHE_TTL", "1800"))
+        # Rate limiting: 30 requests per minute
+        self.rate_limit = int(os.getenv("NEWS_RATE_LIMIT", "30"))
+        self.rate_window = int(os.getenv("NEWS_RATE_WINDOW", "60"))
         self.substack_url = os.getenv(
             "BERAHOME_SUBSTACK_URL",
             "https://berahome.substack.com"
@@ -52,17 +55,37 @@ class NewsMonitor:
 
     async def get_latest_news(self) -> List[Dict[str, Any]]:
         """获取最新的Berachain生态新闻"""
-        if not await self.rate_limiter.check_rate_limit("news_monitor"):
+        if not await self.rate_limiter.check_rate_limit(
+            "news_monitor",
+            limit=self.rate_limit,
+            window=self.rate_window
+        ):
             self.logger.warning(
                 "Rate limit exceeded for news monitor",
-                extra={"category": DebugCategory.API.value}
+                extra={
+                    "category": DebugCategory.API.value,
+                    "limit": self.rate_limit,
+                    "window": self.rate_window
+                }
             )
-            return await self._get_cached_articles() or []
+            # Return cached articles when rate limited
+            cached = await self._get_cached_articles()
+            if cached:
+                self.logger.info(
+                    "Returning cached articles due to rate limit",
+                    extra={"category": DebugCategory.CACHE.value}
+                )
+                return cached
+            return []
 
         try:
             # Check cache first
             cached_articles = await self._get_cached_articles()
             if cached_articles:
+                self.logger.debug(
+                    "Returning cached articles",
+                    extra={"category": DebugCategory.CACHE.value}
+                )
                 return cached_articles
 
             # Fetch and process articles
@@ -73,6 +96,13 @@ class NewsMonitor:
             if articles:
                 # Update cache and index
                 await self._update_cache_and_index(articles)
+                self.logger.info(
+                    f"Fetched and cached {len(articles)} articles",
+                    extra={
+                        "category": DebugCategory.SCRAPING.value,
+                        "article_count": len(articles)
+                    }
+                )
                 return articles
 
             return []
