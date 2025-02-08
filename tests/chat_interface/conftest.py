@@ -1,6 +1,6 @@
 import pytest
 import redis
-from typing import AsyncGenerator, Generator
+from typing import Generator
 from src.chat_interface.utils.rate_limiter import RateLimiter
 from src.chat_interface.services.context_service import ContextManager
 
