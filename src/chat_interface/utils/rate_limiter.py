@@ -1,4 +1,5 @@
 import time
+import asyncio
 import redis.asyncio
 from typing import Optional, cast
 from redis.asyncio.client import Redis
@@ -23,16 +24,28 @@ class RateLimiter:
     async def initialize(self) -> None:
         """Initialize the rate limiter"""
         if not self._redis_client:
-            self._redis_client = await redis.asyncio.Redis.from_url(
-                "redis://localhost:6379/0",
-                decode_responses=False
-            )
-            if not self._redis_client:
-                raise RuntimeError("Failed to initialize Redis client")
-            # Verify Redis connection
-            await self._redis_client.ping()
-            # Clear any existing rate limit data
-            await self._redis_client.delete("rate_limit:*")
+            try:
+                self._redis_client = await redis.asyncio.Redis.from_url(
+                    "redis://localhost:6379/0",
+                    decode_responses=False,
+                    socket_timeout=5.0,
+                    socket_connect_timeout=5.0
+                )
+                if not self._redis_client:
+                    raise RuntimeError("Failed to initialize Redis client")
+
+                # Verify connection and clear data
+                await asyncio.wait_for(self._redis_client.ping(), timeout=5.0)
+                await asyncio.wait_for(
+                    self._redis_client.delete("rate_limit:*"),
+                    timeout=5.0
+                )
+            except (asyncio.TimeoutError, redis.RedisError) as e:
+                raise RuntimeError(f"Redis initialization failed: {str(e)}")
+            except Exception as e:
+                raise RuntimeError(
+                    f"Unexpected error during Redis setup: {str(e)}"
+                )
 
     async def check_rate_limit(
         self,
@@ -41,24 +54,34 @@ class RateLimiter:
         window: Optional[int] = None
     ) -> bool:
         """检查是否超出速率限制"""
-        # Check rate limit
-        current = int(time.time())
-        limit = limit or self.default_limit
-        window = window or self.default_window
+        try:
+            current = int(time.time())
+            limit = limit or self.default_limit
+            window = window or self.default_window
 
-        key = f"rate_limit:{key}"
+            key = f"rate_limit:{key}"
 
-        # Use Redis pipeline for atomic operations
-        async with self.redis_client.pipeline() as pipe:
-            # Remove old entries first
-            pipe.zremrangebyscore(key, 0, current - window)
-            # Get current count before adding new request
-            pipe.zcard(key)
-            # Add new request
-            pipe.zadd(key, {str(current): current})
-            pipe.expire(key, window)
-            results = await pipe.execute()
+            # Use Redis pipeline for atomic operations with timeout
+            async with self.redis_client.pipeline() as pipe:
+                # Remove old entries first
+                pipe.zremrangebyscore(key, 0, current - window)
+                # Get current count before adding new request
+                pipe.zcard(key)
+                # Add new request
+                pipe.zadd(key, {str(current): current})
+                pipe.expire(key, window)
+                # Execute pipeline with timeout
+                results = await asyncio.wait_for(
+                    pipe.execute(),
+                    timeout=5.0
+                )
 
-        # Check count before new request was added
-        request_count = cast(int, results[1])
-        return request_count < limit
+            # Check count before new request was added
+            request_count = cast(int, results[1])
+            return request_count < limit
+        except (asyncio.TimeoutError, redis.RedisError) as e:
+            raise RuntimeError(f"Rate limit check failed: {str(e)}")
+        except Exception as e:
+            raise RuntimeError(
+                f"Unexpected error during rate limit check: {str(e)}"
+            )

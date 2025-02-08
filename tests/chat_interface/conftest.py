@@ -1,4 +1,5 @@
 import os
+import asyncio
 from typing import AsyncGenerator
 import pytest
 import redis.asyncio
@@ -15,20 +16,16 @@ from src.chat_interface.utils.metrics import Metrics
 from src.chat_interface.utils.rate_limiter import RateLimiter
 
 
-@pytest.fixture(scope="session")
-def event_loop():
+@pytest.fixture(scope="function")
+async def event_loop():
     """Create an event loop for testing"""
-    import asyncio
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    yield loop
-    if loop.is_running():
-        loop.stop()
-    if not loop.is_closed():
+        yield loop
+    finally:
         loop.close()
+        asyncio.set_event_loop(None)
 
 
 @pytest.fixture(scope="function")
@@ -39,40 +36,69 @@ async def redis_client() -> AsyncGenerator[redis.asyncio.Redis, None]:
     os.environ["OLLAMA_API_URL"] = "http://localhost:11434"
     os.environ["DEEPSEEK_API_KEY"] = "test_key"
 
-    client = await redis.asyncio.Redis.from_url(
-        "redis://localhost:6379/0",
-        decode_responses=False,
-        encoding='utf-8'
-    )
-    if not client:
-        raise RuntimeError("Failed to initialize Redis client")
-
-    await client.ping()  # Ensure connection is established
-    await client.flushdb()  # Clear any existing data
+    client = None
     try:
+        client = await redis.asyncio.Redis.from_url(
+            "redis://localhost:6379/0",
+            decode_responses=False,
+            encoding='utf-8',
+            socket_timeout=5.0,
+            socket_connect_timeout=5.0
+        )
+        if not client:
+            raise RuntimeError("Failed to initialize Redis client")
+
+        # Verify connection and clear data with timeouts
+        try:
+            await asyncio.wait_for(client.ping(), timeout=5.0)
+            await asyncio.wait_for(client.flushdb(), timeout=5.0)
+        except asyncio.TimeoutError as e:
+            raise RuntimeError(f"Redis operation timed out: {str(e)}")
+
         yield client
+
+    except redis.RedisError as e:
+        raise RuntimeError(f"Redis initialization failed: {str(e)}")
+    except Exception as e:
+        raise RuntimeError(f"Unexpected error during Redis setup: {str(e)}")
     finally:
         if client:
             try:
-                await client.aclose()
-            except Exception:
-                pass
+                await asyncio.wait_for(client.aclose(), timeout=5.0)
+            except Exception as e:
+                print(f"Warning: Error during Redis cleanup: {str(e)}")
 
 
 @pytest.fixture(scope="function")
-async def rate_limiter(redis_client: redis.asyncio.Redis) -> RateLimiter:
+async def rate_limiter(
+    redis_client: redis.asyncio.Redis
+) -> AsyncGenerator[RateLimiter, None]:
     """Create a rate limiter instance for testing"""
     limiter = RateLimiter(redis_client)
-    await limiter.initialize()
-    return limiter
+    try:
+        await asyncio.wait_for(limiter.initialize(), timeout=5.0)
+        yield limiter
+    except asyncio.TimeoutError as e:
+        raise RuntimeError(f"Rate limiter initialization timed out: {str(e)}")
+    except Exception as e:
+        raise RuntimeError(f"Rate limiter initialization failed: {str(e)}")
 
 
 @pytest.fixture(scope="function")
-async def context_manager(redis_client: redis.asyncio.Redis) -> ContextManager:
+async def context_manager(
+    redis_client: redis.asyncio.Redis
+) -> AsyncGenerator[ContextManager, None]:
     """Create a context manager instance for testing"""
     manager = ContextManager(redis_client)
-    await manager.initialize()
-    return manager
+    try:
+        await asyncio.wait_for(manager.initialize(), timeout=5.0)
+        yield manager
+    except asyncio.TimeoutError as e:
+        raise RuntimeError(
+            f"Context manager initialization timed out: {str(e)}"
+        )
+    except Exception as e:
+        raise RuntimeError(f"Context manager initialization failed: {str(e)}")
 
 
 @pytest.fixture
@@ -99,7 +125,7 @@ async def chat_handler(
     circuit_breaker: CircuitBreaker,
     response_formatter: ResponseFormatter,
     monkeypatch
-) -> ChatHandler:
+) -> AsyncGenerator[ChatHandler, None]:
     """创建测试用的聊天处理器"""
     # Mock responses
     async def mock_get_price_data():
@@ -171,5 +197,10 @@ async def chat_handler(
         model_manager=model_manager,
         response_formatter=response_formatter
     )
-    await handler.initialize()
-    return handler
+    try:
+        await asyncio.wait_for(handler.initialize(), timeout=5.0)
+        yield handler
+    except asyncio.TimeoutError as e:
+        raise RuntimeError(f"Chat handler initialization timed out: {str(e)}")
+    except Exception as e:
+        raise RuntimeError(f"Chat handler initialization failed: {str(e)}")

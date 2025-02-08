@@ -1,8 +1,23 @@
 import pytest
+import asyncio
 from fastapi.testclient import TestClient
 from unittest.mock import patch
 
-from src.chat_interface.handlers.api_handler import app
+from src.chat_interface.handlers.api_handler import (
+    app, rate_limiter, context_manager, initialize_redis
+)
+
+
+# Initialize Redis client for tests
+async def init_redis():
+    redis_client = await initialize_redis()
+    rate_limiter._redis_client = redis_client
+    context_manager._redis_client = redis_client
+    await rate_limiter.initialize()
+    await context_manager.initialize()
+
+# Run Redis initialization
+asyncio.run(init_redis())
 
 client = TestClient(app)
 
@@ -13,9 +28,9 @@ async def test_full_chat_flow():
     # Mock external service responses
     price_data = {
         "berachain": {
-            "usd": "1.23",
-            "usd_24h_vol": "1000000",
-            "usd_24h_change": "5.67"
+            "usd": 1.23,
+            "usd_24h_vol": 1000000,
+            "usd_24h_change": 5.67
         }
     }
     news_data = [dict(
@@ -107,10 +122,11 @@ async def test_rate_limit_handling():
             }
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 429  # Rate limit status code
         data = response.json()
-        assert "❌ 错误" in data["market_data"]
-        assert "Rate limit exceeded" in data["market_data"]
+        assert data["error"] == "Service unavailable"
+        assert data["message"] == "Rate limit exceeded"
+        assert "retry_after" in data
 
 
 @pytest.mark.asyncio

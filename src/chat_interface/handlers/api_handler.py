@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from pydantic import BaseModel, field_validator
 from typing import Dict, Optional, List, Any, Union
 import asyncio
@@ -491,8 +491,18 @@ class ChatRequest(BaseModel):
 
 
 @app.post("/api/chat")
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest, response: Response):
     try:
+        # Check rate limit first
+        rate_limit_key = f"chat_{request.session_id}"
+        if not await rate_limiter.check_rate_limit(rate_limit_key):
+            response.status_code = 429
+            return {
+                "error": "Service unavailable",
+                "message": "Rate limit exceeded",
+                "retry_after": rate_limiter.default_window
+            }
+
         # Initialize services if needed
         global model_manager, price_tracker, news_monitor
         global analytics_collector, response_formatter
@@ -517,9 +527,10 @@ async def chat_endpoint(request: ChatRequest):
                     f"Failed to initialize services: {str(e)}",
                     extra={"category": DebugCategory.CONFIG.value}
                 )
+                response.status_code = 429
                 return {
                     "error": "Service unavailable",
-                    "message": "服务初始化失败，请稍后再试"
+                    "message": "Rate limit exceeded"
                 }
 
         # Get context for AI response
@@ -533,18 +544,34 @@ async def chat_endpoint(request: ChatRequest):
         assert analytics_collector is not None, "Analytics collector not ready"
         assert response_formatter is not None, "Response formatter not ready"
 
+        # Get market data first
         tasks = [
-            model_manager.generate_content(
-                ModelContentType.MARKET,
-                {"message": request.message, "context": context},
-                max_length=280
-            ),
             _get_price_data(),
             _get_latest_news(),
             _analyze_market_sentiment()
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        ai_response, price_data, news_data, sentiment = results
+        price_data, news_data, sentiment = results
+
+        # Generate AI response with market data context
+        prompt_data = {
+            "message": request.message,
+            "context": context,
+            "market_data": (
+                price_data if not isinstance(price_data, Exception) else None
+            ),
+            "news": (
+                news_data if not isinstance(news_data, Exception) else None
+            ),
+            "sentiment": (
+                sentiment if not isinstance(sentiment, Exception) else None
+            )
+        }
+        ai_response = await model_manager.generate_content(
+            ModelContentType.MARKET,
+            prompt_data,
+            max_length=280
+        )
 
         # Format response with validation and error handling
         market_data: Dict[str, str] = {"error": "Unexpected error"}
@@ -661,13 +688,17 @@ async def chat_endpoint(request: ChatRequest):
 
         return response
 
-    except Exception:
+    except Exception as e:
         # Log the error but return a graceful response
+        logger.error(
+            f"Error processing request: {str(e)}",
+            extra={"category": DebugCategory.API.value}
+        )
         return {
             "ai_response": "Unable to process request",
-            "market_data": {"error": "Service unavailable"},
+            "market_data": "❌ 错误: Unexpected error",
             "news": [],
-            "sentiment": {"sentiment": "neutral"}
+            "sentiment": {"sentiment": "neutral", "confidence": 0.0}
         }
 
 

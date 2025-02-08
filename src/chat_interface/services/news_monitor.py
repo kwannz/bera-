@@ -92,12 +92,14 @@ class NewsMonitor:
             try:
                 redis_client = self.rate_limiter.redis_client
                 # Get members from Redis set
-                members = await redis_client.smembers(  # type: ignore[misc]
-                    key
-                )
+                members_result = redis_client.smembers(key)
+                if hasattr(members_result, '__await__'):
+                    members = await members_result
+                else:
+                    members = members_result
                 article_ids = {
                     member.decode('utf-8')
-                    for member in members
+                    for member in cast(Set[bytes], members)
                     if isinstance(member, bytes)
                 }
             except Exception as e:
