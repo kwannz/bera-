@@ -6,10 +6,10 @@ describe('Test Environment Setup', () => {
     // Load environment variables from .env file
     dotenv.config();
 
-    // Set up environment variables
-    process.env.TWITTER_USERNAME = 'myjoi_ai';
-    process.env.TWITTER_PASSWORD = 'joiapp1278!';
-    process.env.TWITTER_EMAIL = 'joiweb3@gmail.com';
+    // Set up environment variables from secure environment
+    process.env.TWITTER_USERNAME = process.env.tusername;
+    process.env.TWITTER_PASSWORD = process.env.tPassword;
+    process.env.TWITTER_EMAIL = process.env.tEmail;
     process.env.TWITTER_API_KEY = process.env.APIKey;
     process.env.TWITTER_API_SECRET = process.env.APIKeySecret;
     process.env.TWITTER_BEARER_TOKEN = process.env.BearerToken;
