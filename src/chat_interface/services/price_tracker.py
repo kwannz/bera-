@@ -20,13 +20,17 @@ class PriceTracker:
         self.metrics = metrics
         self.circuit_breaker = circuit_breaker
         self.cache: Dict[str, Dict[str, Any]] = {}
-        self.api_key = os.getenv("COINGECKO_API_KEY")
+        self.api_key = os.getenv("BERATRAIL_API_KEY")
         self.cache_ttl = int(os.getenv("PRICE_CACHE_TTL", "300"))  # 5 minutes default
+        self.api_url = os.getenv(
+            "BERATRAIL_API_URL",
+            "https://api.beratrail.io/v1"
+        )
         self.logger = get_logger(__name__)
         
         if not self.api_key:
             self.logger.error(
-                "Missing required environment variable: COINGECKO_API_KEY",
+                "Missing required environment variable: BERATRAIL_API_KEY",
                 extra={"category": DebugCategory.CONFIG.value}
             )
 
@@ -95,41 +99,49 @@ class PriceTracker:
     @async_retry(retries=3, delay=1.0, exceptions=(aiohttp.ClientError,))
     async def _fetch_price_data(self) -> Dict[str, Any]:
         """获取价格数据，使用重试装饰器和断路器"""
-        url = "https://api.coingecko.com/api/v3/simple/price"
-        params = {
-            "ids": "berachain",
-            "vs_currencies": "usd",
-            "include_24hr_vol": "true",
-            "include_24hr_change": "true",
-            "x_cg_api_key": self.api_key
+        url = f"{self.api_url}/tokens/bera"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
         }
 
         self.metrics.start_request("price_tracker")
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
+                async with session.get(url, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
-                        if "berachain" in data:
+                        if all(k in data for k in ["price", "volume_24h", "price_change_24h"]):
+                            # Transform to match expected format
+                            price_data = {
+                                "berachain": {
+                                    "usd": data["price"],
+                                    "usd_24h_vol": data["volume_24h"],
+                                    "usd_24h_change": data["price_change_24h"]
+                                }
+                            }
                             # Cache the valid response
                             try:
                                 await self.rate_limiter.redis_client.setex(
                                     "bera_price",
                                     self.cache_ttl,
-                                    json.dumps(data)
+                                    json.dumps(price_data)
                                 )
                             except Exception as e:
                                 self.logger.error(
                                     f"Failed to cache price data: {str(e)}",
                                     extra={"category": DebugCategory.CACHE.value}
                                 )
-                            self.cache["last_price"] = data
+                            self.cache["last_price"] = price_data
                             self.metrics.end_request("price_tracker")
-                            return data
+                            return price_data
                         else:
                             self.logger.error(
-                                "Invalid response format from CoinGecko API",
-                                extra={"category": DebugCategory.API.value}
+                                "Invalid response format from BeraTrail API",
+                                extra={
+                                    "category": DebugCategory.API.value,
+                                    "response": str(data)
+                                }
                             )
                             self.metrics.record_error("price_tracker")
                             return self.cache.get(
@@ -138,8 +150,11 @@ class PriceTracker:
                             )
                     else:
                         self.logger.error(
-                            f"CoinGecko API error: HTTP {response.status}",
-                            extra={"category": DebugCategory.API.value}
+                            f"BeraTrail API error: HTTP {response.status}",
+                            extra={
+                                "category": DebugCategory.API.value,
+                                "response": await response.text()
+                            }
                         )
                         self.metrics.record_error("price_tracker")
                         return self.cache.get(
@@ -148,7 +163,7 @@ class PriceTracker:
                         )
         except Exception as e:
             self.logger.error(
-                f"CoinGecko API error: {str(e)}",
+                f"BeraTrail API error: {str(e)}",
                 extra={"category": DebugCategory.API.value}
             )
             self.metrics.record_error("price_tracker")
