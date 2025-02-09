@@ -3,10 +3,8 @@
 A comprehensive monitoring and analysis system for the Berachain ecosystem, featuring real-time price tracking, multi-DEX integration, and AI-powered insights.
 
 ## Features
-- Real-time BERA token price tracking across multiple DEXs:
-  - PancakeSwap integration
-  - Uniswap integration
-  - Jupiter (Solana) integration
+- Real-time BERA token price tracking across  DEXs:
+
 - WebSocket-based live price updates
 - TradingView chart integration
 - BeraTrail API integration with fallback sources
